@@ -1,4 +1,66 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
+import type { CartItem, CustomerFormData, Coordinates, FormErrors } from '@/types';
+import { useOrders } from '@/features/orders/useOrders';
+import { useCustomers } from '@/features/customers/useCustomers';
+import { PROMOTIONS } from '@/features/orders/helpers';
+import { TabNavigation } from '@/components/layout/TabNavigation';
+import { PromotionsGrid } from './PromotionsGrid';
+import { CustomerForm } from './CustomerForm';
+import { CartPanel } from './CartPanel';
+import { ShoppingCart, User, Utensils } from 'lucide-react';
+
+type CashierTab = 'promotions' | 'customer' | 'cart';
+
+export const CashierPanel: React.FC = () => {
+  const [activeTab, setActiveTab] = useState<CashierTab>('promotions');
+  const [cart, setCart] = useState<CartItem[]>([]);
+  const [customerData, setCustomerData] = useState<CustomerFormData>({
+    name: '',
+    phone: '',
+    street: '',
+    number: '',
+    sector: '',
+    city: 'Puerto Montt',
+    references: '',
+    paymentMethod: 'debito',
+    paymentStatus: 'paid',
+    dueMethod: 'efectivo',
+  });
+  const [selectedCoords, setSelectedCoords] = useState<Coordinates | null>(null);
+  const [errors, setErrors] = useState<FormErrors>({});
+  const [isCreatingOrder, setIsCreatingOrder] = useState(false);
+
+  // Hooks
+  const orders = useOrders();
+  const customers = useCustomers();
+
+  // Cart operations
+  const addToCart = (promotionId: number) => {
+    const promotion = PROMOTIONS.find(p => p.id === promotionId);
+    if (!promotion) return;
+
+    const existingItem = cart.find(item => item.id === promotionId);
+    if (existingItem) {
+      setCart(cart.map(item =>
+        item.id === promotionId
+          ? { ...item, quantity: item.quantity + 1 }
+          : item
+      ));
+    } else {
+      setCart([...cart, { ...promotion, quantity: 1 }]);
+    }
+
+    // Auto-navigate to cart if this is the first item
+    if (cart.length === 0) {
+      setTimeout(() => setActiveTab('cart'), 500);
+    }
+  };
+
+  const removeFromCart = (itemId: number) => {
+    setCart(cart.filter(item => item.id !== itemId));
+  };
+
+  import React, { useState, useEffect } from 'react';
 import type { CartItem, CustomerFormData, GeocodeResult, Coordinates, FormErrors } from '@/types';
 import { useDebounced } from '@/hooks/useDebounced';
 import { useGeocoding } from '@/features/geocoding/useGeocoding';
