@@ -75,22 +75,35 @@ export const App: React.FC = () => {
             </div>
 
             {/* Role-specific content */}
-            {userRole === 'cashier' && <CashierPanel />}
+            {userRole === 'cashier' && (
+              <div className="p-4 bg-white rounded-lg shadow">
+                <p>Panel de Cajero - En desarrollo</p>
+              </div>
+            )}
 
-            {userRole === 'cook' && <CookBoard />}
+            {userRole === 'cook' && (
+              <div className="p-4 bg-white rounded-lg shadow">
+                <p>Panel de Cocinero - En desarrollo</p>
+              </div>
+            )}
 
-            {userRole === 'delivery' && <DeliveryPanel />}
+            {userRole === 'delivery' && (
+              <div className="p-4 bg-white rounded-lg shadow">
+                <p>Panel de Delivery - En desarrollo</p>
+              </div>
+            )}
 
-            {userRole === 'client' && <ClientPanel />}
-                  Aquí irá el seguimiento de pedidos y modo tótem
-                </p>
+            {userRole === 'client' && (
+              <div className="p-4 bg-white rounded-lg shadow">
+                <p>Panel de Cliente - En desarrollo</p>
+                <p>Aquí irá el seguimiento de pedidos y modo tótem</p>
               </div>
             )}
           </div>
         )}
 
         {/* Debug info in development */}
-        {process.env.NODE_ENV === 'development' && (
+        {import.meta.env.DEV && (
           <div className="mt-8 p-4 bg-gray-100 rounded-lg text-sm text-gray-600">
             <h4 className="font-semibold mb-2">Debug Info:</h4>
             <p>Role: {userRole}</p>
