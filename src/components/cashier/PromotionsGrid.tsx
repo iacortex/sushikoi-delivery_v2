@@ -1,12 +1,27 @@
 import React from 'react';
 import { Plus, Star, Clock } from 'lucide-react';
-import type { Promotion } from '@/types';
-import { formatCLP } from '@/lib/format';
+
+interface Promotion {
+  id: number;
+  name: string;
+  description: string;
+  items: string[];
+  originalPrice: number;
+  discountPrice: number;
+  discount: number;
+  image: string;
+  popular: boolean;
+  cookingTime: number;
+}
 
 interface PromotionsGridProps {
   promotions: Promotion[];
   onAddToCart: (promotionId: number) => void;
 }
+
+const formatCLP = (amount: number) => {
+  return new Intl.NumberFormat('es-CL').format(amount);
+};
 
 export const PromotionsGrid: React.FC<PromotionsGridProps> = ({
   promotions,
@@ -23,7 +38,7 @@ export const PromotionsGrid: React.FC<PromotionsGridProps> = ({
         </p>
       </div>
 
-      <div className="grid-promotions">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {promotions.map((promotion) => (
           <PromotionCard
             key={promotion.id}
@@ -50,10 +65,10 @@ const PromotionCard: React.FC<PromotionCardProps> = ({
   };
 
   return (
-    <div className="card hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1 group">
+    <div className="bg-white rounded-lg shadow-sm overflow-hidden hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1 group">
       {/* Popular Badge */}
       {promotion.popular && (
-        <div className="absolute top-0 left-0 right-0 bg-gradient-to-r from-red-500 to-pink-500 text-white text-center py-2 z-10">
+        <div className="bg-gradient-to-r from-red-500 to-pink-500 text-white text-center py-2 z-10">
           <span className="text-sm font-semibold flex items-center justify-center gap-1">
             <Star size={14} fill="white" />
             MÁS POPULAR
@@ -61,7 +76,7 @@ const PromotionCard: React.FC<PromotionCardProps> = ({
         </div>
       )}
 
-      <div className={`card-body ${promotion.popular ? 'pt-8' : ''}`}>
+      <div className={`p-6 ${promotion.popular ? 'pt-4' : ''}`}>
         {/* Image/Emoji */}
         <div className="text-center mb-4">
           <span 
@@ -126,7 +141,7 @@ const PromotionCard: React.FC<PromotionCardProps> = ({
         {/* Add to Cart Button */}
         <button
           onClick={handleAddToCart}
-          className="btn-primary w-full group-hover:bg-red-600 transform transition-all duration-200"
+          className="w-full bg-red-500 hover:bg-red-600 text-white py-2 px-4 rounded-lg transition-colors group-hover:bg-red-600 transform transition-all duration-200 flex items-center justify-center gap-2"
           aria-label={`Agregar ${promotion.name} al carrito`}
         >
           <Plus size={16} />

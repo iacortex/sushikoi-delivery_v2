@@ -1,12 +1,27 @@
 import React, { useState, useMemo } from 'react';
 import { Search, User, Phone, MapPin, Clock } from 'lucide-react';
-import type { UseCustomersReturn } from '@/features/customers/useCustomers';
-import { formatCLP } from '@/lib/format';
+
+interface Customer {
+  name: string;
+  phone: string;
+  street: string;
+  number: string;
+  sector?: string;
+  city?: string;
+  references?: string;
+  totalOrders?: number;
+  totalSpent?: number;
+  lastOrderAt?: number;
+}
 
 interface CustomerSearchProps {
-  customers: UseCustomersReturn;
-  onSelectCustomer: (customer: any) => void;
+  customers: Customer[];
+  onSelectCustomer: (customer: Customer) => void;
 }
+
+const formatCLP = (amount: number) => {
+  return new Intl.NumberFormat('es-CL').format(amount);
+};
 
 export const CustomerSearch: React.FC<CustomerSearchProps> = ({
   customers,
@@ -20,31 +35,36 @@ export const CustomerSearch: React.FC<CustomerSearchProps> = ({
     
     if (!query) {
       // Return recent customers if no query
-      return customers.customers
+      return customers
         .filter(customer => customer.lastOrderAt)
         .sort((a, b) => (b.lastOrderAt || 0) - (a.lastOrderAt || 0))
         .slice(0, 6);
     }
 
     // Search by name, phone, or address
-    return customers.searchCustomers({ query, limit: 10 });
+    return customers.filter(customer => 
+      customer.name.toLowerCase().includes(query) ||
+      customer.phone.includes(query) ||
+      customer.street.toLowerCase().includes(query) ||
+      (customer.sector && customer.sector.toLowerCase().includes(query))
+    ).slice(0, 10);
   }, [searchQuery, customers]);
 
-  const handleSelectCustomer = (customer: any) => {
+  const handleSelectCustomer = (customer: Customer) => {
     onSelectCustomer(customer);
     setSearchQuery(''); // Clear search after selection
   };
 
   return (
-    <div className="card">
-      <div className="card-header">
+    <div className="bg-white rounded-lg shadow-sm">
+      <div className="p-6 border-b">
         <h4 className="font-semibold text-gray-700 flex items-center gap-2">
           <Search size={18} />
           Buscar Cliente Existente
         </h4>
       </div>
       
-      <div className="card-body space-y-4">
+      <div className="p-6 space-y-4">
         {/* Search Input */}
         <div className="relative">
           <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -54,7 +74,7 @@ export const CustomerSearch: React.FC<CustomerSearchProps> = ({
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="input pl-10"
+            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
             placeholder="Buscar por nombre, teléfono o dirección..."
             aria-label="Buscar cliente"
           />
@@ -108,8 +128,8 @@ export const CustomerSearch: React.FC<CustomerSearchProps> = ({
 };
 
 interface CustomerCardProps {
-  customer: any;
-  onSelect: (customer: any) => void;
+  customer: Customer;
+  onSelect: (customer: Customer) => void;
 }
 
 const CustomerCard: React.FC<CustomerCardProps> = ({ customer, onSelect }) => {

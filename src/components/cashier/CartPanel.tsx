@@ -1,7 +1,19 @@
 import React from 'react';
 import { Plus, Minus, Trash2, ShoppingCart, Clock, ArrowRight } from 'lucide-react';
-import type { CartItem } from '@/types';
-import { formatCLP } from '@/lib/format';
+
+interface CartItem {
+  id: number;
+  name: string;
+  description: string;
+  items: string[];
+  originalPrice: number;
+  discountPrice: number;
+  discount: number;
+  image: string;
+  popular: boolean;
+  cookingTime: number;
+  quantity: number;
+}
 
 interface CartPanelProps {
   cart: CartItem[];
@@ -12,6 +24,10 @@ interface CartPanelProps {
   estimatedTime: number;
   onContinue: () => void;
 }
+
+const formatCLP = (amount: number) => {
+  return new Intl.NumberFormat('es-CL').format(amount);
+};
 
 export const CartPanel: React.FC<CartPanelProps> = ({
   cart,
@@ -24,9 +40,9 @@ export const CartPanel: React.FC<CartPanelProps> = ({
 }) => {
   if (cart.length === 0) {
     return (
-      <div className="card">
-        <div className="card-body">
-          <div className="text-center py-12">
+      <div className="max-w-4xl mx-auto">
+        <div className="bg-white rounded-lg shadow-sm">
+          <div className="p-12 text-center">
             <ShoppingCart size={64} className="mx-auto mb-4 text-gray-300" />
             <h3 className="text-xl font-semibold text-gray-600 mb-2">
               El carrito está vacío
@@ -36,7 +52,7 @@ export const CartPanel: React.FC<CartPanelProps> = ({
             </p>
             <button
               onClick={() => window.history.back()}
-              className="btn-primary"
+              className="bg-red-500 hover:bg-red-600 text-white px-6 py-2 rounded-lg transition-colors"
             >
               Ver Promociones
             </button>
@@ -49,8 +65,8 @@ export const CartPanel: React.FC<CartPanelProps> = ({
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       {/* Header */}
-      <div className="card">
-        <div className="card-header">
+      <div className="bg-white rounded-lg shadow-sm">
+        <div className="p-6 border-b">
           <div className="flex items-center justify-between">
             <h2 className="text-2xl font-semibold text-gray-800 flex items-center gap-2">
               <ShoppingCart className="text-green-500" />
@@ -81,8 +97,8 @@ export const CartPanel: React.FC<CartPanelProps> = ({
       </div>
 
       {/* Summary */}
-      <div className="card">
-        <div className="card-body">
+      <div className="bg-white rounded-lg shadow-sm">
+        <div className="p-6">
           <div className="space-y-4">
             {/* Totals */}
             <div className="flex justify-between items-center text-lg">
@@ -106,14 +122,14 @@ export const CartPanel: React.FC<CartPanelProps> = ({
             <div className="flex gap-3">
               <button
                 onClick={onClearCart}
-                className="btn-secondary flex-1"
+                className="flex-1 bg-gray-500 hover:bg-gray-600 text-white py-2 px-4 rounded-lg transition-colors flex items-center justify-center gap-2"
               >
                 <Trash2 size={16} />
                 Vaciar Carrito
               </button>
               <button
                 onClick={onContinue}
-                className="btn-success flex-2"
+                className="flex-2 bg-green-500 hover:bg-green-600 text-white py-2 px-6 rounded-lg transition-colors flex items-center justify-center gap-2"
               >
                 Continuar con Datos del Cliente
                 <ArrowRight size={16} />
@@ -152,8 +168,8 @@ const CartItemCard: React.FC<CartItemCardProps> = ({
   const itemTotal = item.discountPrice * item.quantity;
 
   return (
-    <div className="card">
-      <div className="card-body">
+    <div className="bg-white rounded-lg shadow-sm">
+      <div className="p-6">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-center">
           {/* Item Info */}
           <div className="md:col-span-2 flex items-start gap-4">
