@@ -12,7 +12,9 @@ import { RoleSelector } from '@/components/layout/RoleSelector';
 import { Dashboard } from '@/components/dashboard/Dashboard';
 
 // Role-specific components
-import { CashierPanel } from '@/components/cashier/CashierPanel';
+// ✅ default import
+import CashierPanel from '@/components/cashier/CashierPanel';
+
 // import { CookBoard } from '@/components/cook/CookBoard';
 // import { DeliveryList } from '@/components/delivery/DeliveryList';
 // import { ClientTracker } from '@/components/client/ClientTracker';
