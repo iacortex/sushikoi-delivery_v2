@@ -5,20 +5,18 @@ import {
   XCircle, AlertCircle, Eye
 } from "lucide-react";
 
-import { PromotionsGrid } from "../cashier/PromotionsGrid";
+import PromotionsGrid from "../cashier/PromotionsGrid";
 import { CartPanel } from "../cashier/CartPanel";
 import { CustomerForm } from "../cashier/CustomerForm";
 import { getMenuItem } from "../../features/menu/catalog";
 import { KioskModal } from "../ui/KioskModal";
 
-// store compartido de órdenes
 import { useOrders } from "@/features/orders/useOrders";
 type OrdersApi = ReturnType<typeof useOrders>;
 
-/* ===================== Modo Tótem ===================== */
 const TOTEM_MODE = true;
 
-/* ===================== Tipos UI ===================== */
+/* ===== Tipos UI ===== */
 export interface CartItem {
   id: number; name: string; description: string; items: string[];
   originalPrice: number; discountPrice: number; discount: number;
@@ -36,7 +34,7 @@ interface FormErrors { [k: string]: string; }
 
 interface OrderUI {
   id: number; publicCode: string; name: string; phone: string; address: string;
-  total: number; status: "pending" | "cooking" | "ready" | "delivered";
+  total: number; status: "pending"|"cooking"|"ready"|"delivered";
   cart: CartItem[]; createdAt: number; estimatedTime: number; paymentMethod: string;
 }
 
@@ -57,39 +55,31 @@ interface AddToCartPayload {
   extrasTotal: number; estimatedTotal: number;
 }
 
-/* ===================== Helpers ===================== */
-const formatCLP = (amount: number) => new Intl.NumberFormat("es-CL").format(amount);
-const timeAgo = (ts: number) => {
-  const m = Math.floor((Date.now() - ts) / 60000);
-  if (m < 1) return "Ahora";
-  if (m < 60) return `${m}m`;
-  const h = Math.floor(m / 60);
-  return `${h}h`;
-};
+/* ===== Helpers ===== */
+const formatCLP = (n: number) => new Intl.NumberFormat("es-CL").format(n);
+const timeAgo = (ts: number) => { const m = Math.floor((Date.now()-ts)/60000); if (m<1) return "Ahora"; if (m<60) return `${m}m`; return `${Math.floor(m/60)}h`; };
 const extrasFromMeta = (m?: OrderMeta) => {
   if (!m) return 0;
   const delivery = m.service === "delivery" ? (m.deliveryFee ?? 0) : 0;
-  const changes = (m.changes ?? []).reduce((s, c) => s + (c?.fee ?? 0), 0);
-  const sauces =
-    ((m.soy?.extraFee ?? m.soy?.feeTotal) ?? 0) +
-    ((m.ginger?.extraFee ?? m.ginger?.feeTotal) ?? 0) +
-    ((m.wasabi?.extraFee ?? m.wasabi?.feeTotal) ?? 0) +
-    ((m.agridulce?.feeTotal ?? m.agridulce?.extraFee) ?? 0) +
-    ((m.acevichada?.feeTotal ?? m.acevichada?.extraFee) ?? 0);
+  const changes  = (m.changes ?? []).reduce((s, c) => s + (c?.fee ?? 0), 0);
+  const sauces   = ((m.soy?.extraFee ?? m.soy?.feeTotal) ?? 0)
+                 + ((m.ginger?.extraFee ?? m.ginger?.feeTotal) ?? 0)
+                 + ((m.wasabi?.extraFee ?? m.wasabi?.feeTotal) ?? 0)
+                 + ((m.agridulce?.feeTotal ?? m.agridulce?.extraFee) ?? 0)
+                 + ((m.acevichada?.feeTotal ?? m.acevichada?.extraFee) ?? 0);
   return delivery + changes + sauces;
 };
 
-/* ===================== Toast ===================== */
-type NType = "success" | "warning" | "error" | "info";
+/* ===== Toast ===== */
+type NType = "success"|"warning"|"error"|"info";
 interface Notification { id: number; type: NType; message: string; timestamp: number; }
-
 const Toast: React.FC<{ n: Notification; onClose: (id: number) => void }> = ({ n, onClose }) => {
   useEffect(() => { const t = setTimeout(() => onClose(n.id), 5000); return () => clearTimeout(t); }, [n.id, onClose]);
-  const Icon = () => n.type === "success" ? <CheckCircle className="text-green-600" size={18} /> :
-                   n.type === "warning" ? <AlertCircle className="text-yellow-600" size={18} /> :
-                   n.type === "error"   ? <XCircle className="text-red-600" size={18} /> :
-                                          <Bell className="text-blue-600" size={18} />;
-  const bg = { success: "bg-green-50 border-green-200", warning: "bg-yellow-50 border-yellow-200", error: "bg-red-50 border-red-200", info: "bg-blue-50 border-blue-200" }[n.type];
+  const Icon = () => n.type === "success" ? <CheckCircle className="text-green-600" size={18}/> :
+                   n.type === "warning" ? <AlertCircle className="text-yellow-600" size={18}/> :
+                   n.type === "error"   ? <XCircle className="text-red-600" size={18}/> :
+                                          <Bell className="text-blue-600" size={18}/>;
+  const bg = { success:"bg-green-50 border-green-200", warning:"bg-yellow-50 border-yellow-200", error:"bg-red-50 border-red-200", info:"bg-blue-50 border-blue-200" }[n.type];
   return (
     <div className={`${bg} border rounded-lg p-3 shadow-md animate-slide-in-right`}>
       <div className="flex items-start gap-2">
@@ -98,15 +88,13 @@ const Toast: React.FC<{ n: Notification; onClose: (id: number) => void }> = ({ n
           <p className="text-sm font-medium text-gray-900">{n.message}</p>
           <p className="text-xs text-gray-500">{timeAgo(n.timestamp)}</p>
         </div>
-        <button onClick={() => onClose(n.id)} className="text-gray-400 hover:text-gray-600">
-          <XCircle size={14} />
-        </button>
+        <button onClick={() => onClose(n.id)} className="text-gray-400 hover:text-gray-600"><XCircle size={14}/></button>
       </div>
     </div>
   );
 };
 
-/* ===== Guardia de cambios de proteína ===== */
+/* ===== Guardia de cambios ===== */
 function enforceOneProteinChange(
   incoming: ChangeLine[] | undefined,
   confirmFn: (msg: string) => boolean,
@@ -115,11 +103,11 @@ function enforceOneProteinChange(
   const list = incoming ?? [];
   if (list.length <= 1) return list;
   const wantsMore = confirmFn("Ya tienes 1 cambio de proteína. ¿Quieres agregar otro cambio?");
-  if (wantsMore) { notify("info", "Se agregaron cambios de proteína adicionales."); return list; }
-  notify("warning", "Se aplicó solo 1 cambio de proteína."); return [list[0]];
+  if (wantsMore) { notify("info","Se agregaron cambios de proteína adicionales."); return list; }
+  notify("warning","Se aplicó solo 1 cambio de proteína."); return [list[0]];
 }
 
-/* =============== Modal Detalle =============== */
+/* ===== Modal detalle ===== */
 const OrderDetailModal: React.FC<{ open: boolean; onClose: () => void; order?: OrderUI; }> = ({ open, onClose, order }) => {
   if (!order) return null;
   return (
@@ -168,13 +156,13 @@ const OrderDetailModal: React.FC<{ open: boolean; onClose: () => void; order?: O
 };
 
 /* ===================== Componente Principal ===================== */
-type Props = { ordersApi?: OrdersApi };
+type Props = {
+  ordersApi: OrdersApi;
+  onOrderCreated?: () => void; // 👈 callback al crear orden
+};
 
-const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
+const CashierPanel: React.FC<Props> = ({ ordersApi, onOrderCreated }) => {
   const [activeTab, setActiveTab] = useState<CashierTab>(TOTEM_MODE ? "promotions" : "dashboard");
-
-  // 🔗 ÓRDENES COMPARTIDAS
-  const { orders, createOrder: createOrderShared } = ordersApi ?? useOrders();
 
   // Carrito
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -186,14 +174,14 @@ const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
   useEffect(() => {
     const rand = (a: number, b: number) => Math.floor(Math.random() * (b - a + 1)) + a;
     const pick = <T,>(arr: T[]) => arr[Math.floor(Math.random() * arr.length)];
-    const first = ["Juan","María","Camila","Javier","Daniela","Felipe","Francisca","Rodrigo","Paula","Ignacio","Valentina","Sebastián","Carolina","Diego","Constanza","Matías","Fernanda","Benjamín","Antonia","Tomás","Isidora","Vicente","Sofía","Gonzalo","Trinidad","Martina","Cristóbal","Joaquín","Josefa","Pedro","Pablo","Andrea","Katherine","Bárbara","Nicole","Álvaro","Verónica","Laura","Rocío","Patricio","Eduardo","Lorena","Marcos","Cecilia","Claudia","Renata","Martín","Agustín","Lucas","Mateo","Emilia","Emma","Amanda","Catalina","Ignacia","Maximiliano","Gabriel","Florencia","Josefina","Antonella","Bruno","Matilde","Julieta","Paz","Alexa","Franco","Gael","Thiago"];
-    const last  = ["Pérez","García","Soto","Fuentes","Rojas","Castro","Paredes","Morales","Díaz","Torres","Aguilar","Muñoz","Reyes","Herrera","Vargas","Silva","Navarro","Vega","Flores","Contreras","Araya","Oyarzo","Trujillo","Alvarado","Salinas","Medina","Campos","Almonacid","Lagos","Mansilla","Méndez","Vidal","Bahamonde","Leiva","González"];
+    const first = ["Juan","María","Camila","Javier","Daniela","Felipe","Francisca","Rodrigo","Paula","Ignacio","Valentina","Sebastián","Carolina","Diego","Constanza","Matías","Fernanda","Benjamín","Antonia","Tomás","Isidora","Vicente","Sofía","Gonzalo","Trinidad","Martina","Cristóbal","Joaquín","Josefa","Pedro","Pablo","Andrea","Katherine","Bárbara","Nicole","Álvaro","Verónica","Laura","Rocío","Patricio","Eduardo","Lorena","Marcos","Cecilia","Claudia","Renata","Martín","Agustín","Lucas","Mateo","Emilia","Emma","Amanda","Catalina","Ignacia","Gabriel","Florencia","Josefina","Bruno","Matilde","Julieta","Paz","Alexa","Franco","Gael","Thiago"];
+    const last  = ["Pérez","García","Soto","Fuentes","Rojas","Castro","Paredes","Morales","Díaz","Torres","Aguilar","Muñoz","Reyes","Herrera","Vargas","Silva","Navarro","Vega","Flores","Contreras","Araya","Oyarzo","Trujillo","Alvarado","Salinas","Medina","Campos","Almonacid","Lagos","Méndez","Vidal","Bahamonde","Leiva","González"];
     const streets = ["Av. Capitán Ávalos","Los Aromos","Av. Angelmó","Volcán Osorno","Egaña","Av. La Cruz","Las Encinas","Camino La Vara","Lago Llanquihue","Puerto Sur","Cardonal","Av. Austral","Urmeneta","Av. Seminario","Los Notros","Altamira","Miraflores","Valle Volcanes","Alerce Norte","Alerce Sur","Mirasol","Chinquihue","Reloncaví","Presidente Ibáñez","Las Quemas","Coihuin"];
     const sectors = ["Mirasol","Cardonal","Alerce Norte","Alerce Sur","Puerto Sur","Centro","Chinquihue","Mirasol Alto","Valle Volcanes","Mirasol Bajo"];
     const cities  = ["Puerto Montt","Puerto Varas","Osorno","Castro"];
     const mkPhone = (i: number) => `+56 9 9${(9000 + (i % 9000)).toString().padStart(4,"0")} ${(1000 + (i*7)%9000).toString().padStart(4,"0")}`;
     const mkCustomer = (i: number) => ({ name: `${pick(first)} ${pick(last)}`, phone: mkPhone(i), street: pick(streets), number: String(rand(1,2500)), sector: Math.random()<.7?pick(sectors):"", city: pick(cities), references: "" });
-    setCustomers(Array.from({ length: 80 }, (_, i) => mkCustomer(i + 1)));
+    setCustomers(Array.from({ length: 60 }, (_, i) => mkCustomer(i + 1)));
   }, []);
 
   // Cliente + errores + extras
@@ -206,13 +194,11 @@ const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
   const [isCreatingOrder, setIsCreatingOrder] = useState(false);
   const [orderMeta, setOrderMeta] = useState<OrderMeta | undefined>(undefined);
 
-  // reloj UI
+  // reloj UI y toasts
   const [now, setNow] = useState(new Date());
   useEffect(() => { const t = setInterval(() => setNow(new Date()), 60000); return () => clearInterval(t); }, []);
-
-  // Toasts
   const [notifs, setNotifs] = useState<Notification[]>([]);
-  const notify = (t: NType, m: string) => setNotifs(p => [{ id: Date.now(), type: t, message: m, timestamp: Date.now() }, ...p].slice(0, 5));
+  const notify = (t: NType, m: string) => setNotifs(p => [{ id: Date.now(), type: t, message: m, timestamp: Date.now() }, ...p].slice(0,5));
   const dismiss = (id: number) => setNotifs(p => p.filter(n => n.id !== id));
 
   /* ====== Carrito ====== */
@@ -225,7 +211,7 @@ const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
     const existing = cart.find((it) => it.id === promotionId);
     if (existing) setCart(cart.map((it) => it.id === promotionId ? { ...it, quantity: it.quantity + 1 } : it));
     else setCart(prev => [...prev, { id: promotionId, name, description, items: [], originalPrice: unitPrice, discountPrice: unitPrice, discount: 0, image: "🍣", popular: false, cookingTime: time, quantity: 1 }]);
-    notify("success", "Producto agregado al carrito"); setActiveTab("customer");
+    notify("success","Producto agregado al carrito"); setActiveTab("customer");
   };
 
   const addToCartDetailed = (p: AddToCartPayload) => {
@@ -261,32 +247,16 @@ const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
       return next;
     });
 
-    notify("success", "Detalle agregado (delivery/cambios/salsas)"); setActiveTab("customer");
+    notify("success","Detalle agregado (delivery/cambios/salsas)"); setActiveTab("customer");
   };
 
   const removeFromCart = (id: number) => { const it = cart.find(i => i.id === id); setCart(cart.filter(i => i.id !== id)); if (it) notify("info", `${it.name} eliminado del carrito`); };
   const updateQuantity = (id: number, q: number) => { if (q <= 0) return removeFromCart(id); setCart(cart.map(i => i.id === id ? { ...i, quantity: q } : i)); };
-  const clearCart = () => { setCart([]); setOrderMeta(undefined); notify("info", "Carrito vaciado"); };
+  const clearCart = () => { setCart([]); setOrderMeta(undefined); notify("info","Carrito vaciado"); };
 
   const cartTotal = useMemo(() => cart.reduce((s, i) => s + i.discountPrice * i.quantity, 0), [cart]);
   const cartCount = useMemo(() => cart.reduce((s, i) => s + i.quantity, 0), [cart]);
   const estimatedCooking = useMemo(() => cart.reduce((m, i) => Math.max(m, i.cookingTime), 0), [cart]);
-
-  /* ====== Cliente ====== */
-  const selectCustomer = (c: any) => {
-    setCustomerData(prev => ({
-      ...prev,
-      name: c?.name ?? "",
-      phone: c?.phone ?? "",
-      street: c?.street ?? "",
-      number: "",
-      sector: c?.sector ?? "",
-      city: c?.city ?? "Puerto Montt",
-      references: c?.references ?? "",
-    }));
-    setActiveTab("customer");
-    notify("info", `Cliente ${c?.name ?? "Sin nombre"} seleccionado`);
-  };
 
   const validate = (): boolean => {
     const e: FormErrors = {};
@@ -301,39 +271,47 @@ const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
   const grandTotal = useMemo(() => cartTotal + extrasFromMeta(orderMeta), [cartTotal, orderMeta]);
 
   const createOrder = async () => {
-    if (!validate()) { notify("error", "Complete todos los campos requeridos"); return; }
+    if (!validate()) { notify("error","Complete todos los campos requeridos"); return; }
     setIsCreatingOrder(true);
     try {
-      const coords = { lat: -41.4717, lng: -72.9411 }; // temporal
-      const created = await createOrderShared({
+      const coords = { lat: -41.4717, lng: -72.9411 };
+      const created = await ordersApi.createOrder({
         customerData: customerData as any,
         cart: cart as any,
         coordinates: coords as any,
         geocodePrecision: "approx" as any,
         routeMeta: null,
       });
+
+      // ✅ asegurar estado 'pending' por seguridad
+      ordersApi.updateOrderStatus?.(created.id, "pending");
+
+      // ✅ avisar al padre (App) para saltar a Cocina
+      onOrderCreated?.();
+
       setSelectedOrder(created as unknown as OrderUI);
       setShowDetail(true);
+
       setCart([]); setOrderMeta(undefined);
       setCustomerData({ name: "", phone: "", street: "", number: "", sector: "", city: "Puerto Montt", references: "", paymentMethod: "debito", paymentStatus: "paid", dueMethod: "efectivo" });
       setErrors({}); setActiveTab("orders");
+
       notify("success", `Pedido #${created.publicCode} creado`);
     } catch {
-      notify("error", "Error al crear pedido");
+      notify("error","Error al crear pedido");
     } finally {
       setIsCreatingOrder(false);
     }
   };
 
-  /* ====== Métricas (del store) ====== */
-  const todayOrders = orders.length;
-  const todayRevenue = orders.reduce((s, o) => s + o.total, 0);
+  /* ====== Métricas del store ====== */
+  const todayOrders = ordersApi.orders.length;
+  const todayRevenue = ordersApi.orders.reduce((s, o) => s + o.total, 0);
   const avgOrderValue = todayOrders ? Math.round(todayRevenue / todayOrders) : 0;
-  const pending = orders.filter(o => o.status.toLowerCase() === "pending").length;
-  const cooking = orders.filter(o => o.status.toLowerCase() === "cooking").length;
-  const ready   = orders.filter(o => o.status.toLowerCase() === "ready").length;
+  const pending = ordersApi.orders.filter(o => o.status === "pending").length;
+  const cooking = ordersApi.orders.filter(o => o.status === "cooking").length;
+  const ready   = ordersApi.orders.filter(o => o.status === "ready").length;
 
-  /* ====== Tabs tipados con badge opcional ====== */
   type TabItem = { key: CashierTab; label: string; icon: any; badge?: number };
   const tabs: TabItem[] = [
     { key: "dashboard",  label: "Dashboard",   icon: BarChart3 },
@@ -429,7 +407,7 @@ const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
               onClearCart={clearCart}
               total={grandTotal}
               estimatedTime={estimatedCooking || 15}
-              onContinue={() => setActiveTab("customer")}
+              onContinue={createOrder}
             />
           )}
 
@@ -440,7 +418,20 @@ const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
               onCustomerDataChange={setCustomerData}
               errors={errors}
               customers={customers}
-              onSelectCustomer={selectCustomer}
+              onSelectCustomer={(c) => {
+                setCustomerData(prev => ({
+                  ...prev,
+                  name: c?.name ?? "",
+                  phone: c?.phone ?? "",
+                  street: c?.street ?? "",
+                  number: "",
+                  sector: c?.sector ?? "",
+                  city: c?.city ?? "Puerto Montt",
+                  references: c?.references ?? "",
+                }));
+                setActiveTab("customer");
+                notify("info", `Cliente ${c?.name ?? "Sin nombre"} seleccionado`);
+              }}
               cart={cart}
               cartTotal={cartTotal}
               estimatedTime={estimatedCooking || 15}
@@ -448,18 +439,19 @@ const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
               isCreatingOrder={isCreatingOrder}
               orderMeta={orderMeta}
               onRequestEditExtras={() => setActiveTab("promotions")}
+              onGoToCart={() => setActiveTab("cart")}  
             />
           )}
 
           {/* Órdenes */}
           {activeTab === "orders" && (
             <div className="space-y-4">
-              {orders.length === 0 ? (
+              {ordersApi.orders.length === 0 ? (
                 <div className="bg-white p-10 rounded-xl text-center text-gray-500 border border-gray-200">
                   No hay órdenes aún
                 </div>
               ) : (
-                orders.map((o) => (
+                ordersApi.orders.map((o) => (
                   <div key={o.id} className="bg-white p-4 rounded-xl border border-gray-200 hover:shadow-sm transition">
                     <div className="flex items-center justify-between">
                       <div>
@@ -494,7 +486,7 @@ const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
   );
 };
 
-/* ===================== Subcomponentes UI ===================== */
+/* ===== UI helpers ===== */
 const KpiCard: React.FC<{ icon: React.ReactNode; title: string; value: React.ReactNode; sub?: string; color: "blue"|"green"|"purple"|"orange" }> = ({ icon, title, value, sub, color }) => {
   const bg = { blue: "bg-blue-100", green: "bg-green-100", purple: "bg-purple-100", orange: "bg-orange-100" }[color];
   return (
@@ -510,7 +502,6 @@ const KpiCard: React.FC<{ icon: React.ReactNode; title: string; value: React.Rea
     </div>
   );
 };
-
 const StatusCard: React.FC<{ title: string; value: number; barColor: "yellow"|"orange"|"green" }> = ({ title, value, barColor }) => {
   const bg  = { yellow: "bg-yellow-200", orange: "bg-orange-200", green: "bg-green-200" }[barColor];
   const bar = { yellow: "bg-yellow-500", orange: "bg-orange-500", green: "bg-green-500" }[barColor];

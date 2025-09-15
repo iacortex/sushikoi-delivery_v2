@@ -2,8 +2,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   User, Phone, Home, Hash, MapPin, MessageSquare,
-  AlertCircle, CreditCard, DollarSign, Package,
-  Truck, Store, Edit3, CheckCircle
+  AlertCircle, CreditCard, Package, Truck, Store, Edit3, CheckCircle
 } from 'lucide-react';
 import { CustomerSearch } from './CustomerSearch';
 
@@ -80,12 +79,17 @@ interface CustomerFormProps {
   cart: CartItem[];
   cartTotal: number;
   estimatedTime: number;
-  onCreateOrder: () => void;
+
+  /** Antes creaba el pedido; ahora el CTA manda al carrito */
+  onCreateOrder: () => void;          // lo dejamos por compatibilidad (no se usa en el botón)
   isCreatingOrder: boolean;
 
   // Extras del pedido (delivery + cambios + salsas) desde el modal de promociones
   orderMeta?: OrderMeta;
   onRequestEditExtras?: () => void;
+
+  /** Nuevo: callback para ir al tab Carrito */
+  onGoToCart: () => void;
 }
 
 /* ===================== Constantes ===================== */
@@ -117,6 +121,7 @@ export const CustomerForm: React.FC<CustomerFormProps> = ({
   isCreatingOrder,
   orderMeta,
   onRequestEditExtras,
+  onGoToCart,
 }) => {
   const [customerMode, setCustomerMode] = useState<CustomerMode>('new');
   const [allowEditExisting, setAllowEditExisting] = useState(false);
@@ -166,13 +171,10 @@ export const CustomerForm: React.FC<CustomerFormProps> = ({
   const grandTotal = cartTotal + extrasTotal;
 
   const hasCartItems = cart.length > 0;
-  const canCreateOrder =
-    hasCartItems &&
-    !!customerData.name &&
-    !!customerData.phone &&
-    !!customerData.street &&
-    !!customerData.number &&
-    (!requiresMpChannel || !!customerData.mpChannel);
+
+  // Para enviar a carrito NO exigimos todos los campos del cliente;
+  // sólo que exista al menos un item
+  const canGoToCart = hasCartItems;
 
   // 👉 cliente existente seleccionado (no mostrar el formulario largo)
   const existingSelected =
@@ -313,11 +315,11 @@ export const CustomerForm: React.FC<CustomerFormProps> = ({
 
                 <div className="mt-3 flex gap-3">
                   <button
-                    onClick={onCreateOrder}
-                    disabled={!canCreateOrder || isCreatingOrder}
-                    className="flex-1 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white py-2 px-4 rounded-lg transition-colors"
+                    onClick={onGoToCart}
+                    disabled={!canGoToCart}
+                    className="flex-1 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white py-2 px-4 rounded-lg transition-colors"
                   >
-                    {isCreatingOrder ? 'Creando…' : 'Crear pedido'}
+                    Enviar a carrito
                   </button>
                 </div>
               </div>
@@ -502,11 +504,11 @@ export const CustomerForm: React.FC<CustomerFormProps> = ({
 
             <div className="mt-4 flex gap-3">
               <button
-                onClick={onCreateOrder}
-                disabled={!canCreateOrder || isCreatingOrder}
-                className="flex-1 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white py-2 px-4 rounded-lg transition-colors"
+                onClick={onGoToCart}
+                disabled={!canGoToCart}
+                className="flex-1 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white py-2 px-4 rounded-lg transition-colors"
               >
-                {isCreatingOrder ? 'Creando…' : 'Crear pedido'}
+                Enviar a carrito
               </button>
             </div>
           </div>

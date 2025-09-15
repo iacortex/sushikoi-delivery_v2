@@ -16,7 +16,7 @@ export interface MenuItem {
 /* ===================== Catálogo ===================== */
 /** Catálogo base (igual a tu versión, con nombres y precios vigentes) */
 export const MENU_CATALOG: Record<MenuId, MenuItem> = {
-  1001: { id: 1001, name: "KOI 1 (35 Bocados fríos)",        price: 21990, time: 18, desc: "Selección fría con salmón, camarón y kanikama", img: "🍣", soyIncluded: 4 },
+  1001: { id: 1001, name: "KOI 1 (35 Bocados fríos)",        price: 21990, time: 18, desc: "Selección fría con salmón, camarón y kanikama", img: "🍣", soyIncluded: 5 },
   1002: { id: 1002, name: "PROMOCIÓN 1 (36 Bocados mixtos)", price: 21990, time: 22, desc: "Mix frío + frito (panko)",                       img: "🥢", soyIncluded: 4 },
   1003: { id: 1003, name: "KOI MIX (45 Bocados mixtos)",     price: 25990, time: 24, desc: "Envueltos + fritos panko",                       img: "🍱", soyIncluded: 5 },
   1004: { id: 1004, name: "KOI 54 (54 Bocados mixtos)",      price: 28990, time: 28, desc: "6 variedades entre envueltos y fritos",         img: "🧧", soyIncluded: 6 },

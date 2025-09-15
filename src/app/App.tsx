@@ -33,6 +33,12 @@ export function App() {
   };
   const handleDashboardToggle = (show: boolean) => setShowDashboard(show);
 
+  // 🔔 al crear una orden, ir a cocina
+  const handleOrderCreated = () => {
+    setUserRole('cook');
+    setShowDashboard(false);
+  };
+
   const getRoleTitle = (): string => {
     const titles = {
       cashier: '🏪 Panel de Cajero/Vendedor',
@@ -65,8 +71,10 @@ export function App() {
           <div>
             {userRole === 'cashier' && (
               <div className="w-full">
-                {/* 🔴 ESTA ES LA LÍNEA CRÍTICA */}
-                <CashierPanel ordersApi={orders} />
+                <CashierPanel
+                  ordersApi={orders}
+                  onOrderCreated={handleOrderCreated}
+                />
               </div>
             )}
 
@@ -76,11 +84,8 @@ export function App() {
                   <h2 className="section-title">{getRoleTitle()}</h2>
                   <KitchenNotifications orders={orders.orders} />
                 </div>
-                {/* Cocina usa la MISMA lista y el MISMO mutador */}
-                <CookBoard
-                  orders={orders.orders}
-                  onStatusChange={orders.updateOrderStatus}
-                />
+                {/* Cocina usa la MISMA instancia del store */}
+                <CookBoard ordersApi={orders} />
               </div>
             )}
 

@@ -1,91 +1,109 @@
 import React, { useMemo } from 'react';
-import { Package, Clock, ChefHat, Bell } from 'lucide-react';
+import { Package, Clock, ChefHat } from 'lucide-react';
 import type { Order, OrderStatus } from '@/types';
-import { useOrders } from '@/features/orders/useOrders';
 import { useTicker } from '@/hooks/useTicker';
 import { OrderCard } from './OrderCard';
-import { KitchenStats } from './KitchenStats';
+import { useOrders } from '@/features/orders/useOrders';
 
+type OrdersApi = ReturnType<typeof useOrders>;
+
+// ✅ ahora Cocina recibe el store completo
 type Props = {
-  orders?: Order[];
-  onStatusChange?: (orderId: number, newStatus: OrderStatus) => void;
+  ordersApi: OrdersApi;
 };
 
-const norm = (s: string) =>
-  s.toLowerCase() as 'pending' | 'cooking' | 'ready' | 'delivered';
-
-export const CookBoard: React.FC<Props> = ({
-  orders: externalOrders,
-  onStatusChange,
-}) => {
+export const CookBoard: React.FC<Props> = ({ ordersApi }) => {
   useTicker();
 
-  // fallback al hook si no llegan props
-  const { orders: hookOrders, updateOrderStatus } = useOrders();
-  const orders = externalOrders ?? hookOrders;
-  const changeStatus = onStatusChange ?? updateOrderStatus;
-
-  // filtra estados de cocina (tolera PENDING en mayúsculas)
+  // no mostrar entregadas
   const kitchenOrders = useMemo(
-    () => orders.filter(o => ['pending', 'cooking', 'ready'].includes(norm(o.status as any))),
-    [orders]
+    () => ordersApi.orders.filter(o => o.status !== 'delivered'),
+    [ordersApi.orders]
   );
 
-  const groups = useMemo(() => ({
-    pending: kitchenOrders.filter(o => norm(o.status as any) === 'pending'),
-    cooking: kitchenOrders.filter(o => norm(o.status as any) === 'cooking'),
-    ready:   kitchenOrders.filter(o => norm(o.status as any) === 'ready'),
-  }), [kitchenOrders]);
+  const pending = useMemo(
+    () => kitchenOrders.filter(o => o.status === 'pending'),
+    [kitchenOrders]
+  );
+  const cooking = useMemo(
+    () => kitchenOrders.filter(o => o.status === 'cooking'),
+    [kitchenOrders]
+  );
+  const ready = useMemo(
+    () => kitchenOrders.filter(o => o.status === 'ready'),
+    [kitchenOrders]
+  );
 
-  if (kitchenOrders.length === 0) {
-    return (
-      <div className="max-w-4xl mx-auto">
-        <div className="card">
-          <div className="card-body">
-            <div className="text-center py-12">
-              <ChefHat size={64} className="mx-auto mb-4 text-gray-300" />
-              <h3 className="text-xl font-semibold text-gray-600 mb-2">No hay pedidos en cocina</h3>
-              <p className="text-gray-500 mb-6">Los nuevos pedidos aparecerán aquí automáticamente</p>
-              <div className="inline-flex items-center gap-2 px-4 py-2 bg-green-100 text-green-800 rounded-lg">
-                <Package size={16} />
-                <span className="text-sm font-medium">Cocina lista para trabajar</span>
-              </div>
+  const counts = {
+    pending: pending.length,
+    cooking: cooking.length,
+    ready: ready.length,
+    total: kitchenOrders.length,
+  };
+
+  const onStatusChange = (orderId: number, status: OrderStatus) => {
+    ordersApi.updateOrderStatus(orderId, status);
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Header con contadores */}
+      <div className="bg-white p-4 rounded-lg border border-gray-200">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <ChefHat className="text-orange-500" />
+            <div>
+              <h3 className="text-lg font-semibold">Cocina</h3>
+              <p className="text-xs text-gray-500">
+                {counts.total} orden{counts.total !== 1 ? 'es' : ''} en proceso
+              </p>
             </div>
+          </div>
+
+          <div className="flex items-center gap-2 text-sm">
+            <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-yellow-100 text-yellow-800">
+              <Clock size={14} /> Pendientes: {counts.pending}
+            </span>
+            <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-orange-100 text-orange-800">
+              🍳 En cocina: {counts.cooking}
+            </span>
+            <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-green-100 text-green-800">
+              <Package size={14} /> Listos: {counts.ready}
+            </span>
           </div>
         </div>
       </div>
-    );
-  }
 
-  return (
-    <div className="max-w-7xl mx-auto space-y-6">
-      <KitchenStats orders={orders} />
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      {/* Kanban */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <KanbanColumn
-          title="Pendientes"
+          title="Pendiente"
           icon={Clock}
           color="yellow"
-          orders={groups.pending}
-          onStatusChange={changeStatus}
+          orders={pending}
+          onStatusChange={onStatusChange}
           nextStatus="cooking"
-          actionLabel="Comenzar a Cocinar"
+          actionLabel="A cocina"
         />
+
         <KanbanColumn
-          title="En Cocina"
-          icon={Package}
+          title="En cocina"
+          icon={ChefHat}
           color="orange"
-          orders={groups.cooking}
-          onStatusChange={changeStatus}
+          orders={cooking}
+          onStatusChange={onStatusChange}
           nextStatus="ready"
-          actionLabel="Marcar como Listo"
+          actionLabel="Marcar listo"
         />
+
         <KanbanColumn
-          title="Listos para Delivery"
-          icon={Bell}
+          title="Listo"
+          icon={Package}
           color="green"
-          orders={groups.ready}
-          onStatusChange={changeStatus}
+          orders={ready}
+          onStatusChange={onStatusChange}
+          nextStatus="delivered"
+          actionLabel="Entregar"
           isReadyColumn
         />
       </div>
@@ -93,50 +111,49 @@ export const CookBoard: React.FC<Props> = ({
   );
 };
 
+type ColumnColor = 'yellow' | 'orange' | 'green';
+
 interface KanbanColumnProps {
   title: string;
   icon: React.ComponentType<{ size?: number; className?: string }>;
-  color: 'yellow' | 'orange' | 'green';
+  color: ColumnColor;
   orders: Order[];
   onStatusChange: (orderId: number, status: OrderStatus) => void;
-  nextStatus?: OrderStatus;
-  actionLabel?: string;
+  nextStatus: OrderStatus;
+  actionLabel: string;
   isReadyColumn?: boolean;
 }
 
 const KanbanColumn: React.FC<KanbanColumnProps> = ({
-  title, icon: Icon, color, orders, onStatusChange, nextStatus, actionLabel, isReadyColumn = false,
+  title,
+  icon: Icon,
+  color,
+  orders,
+  onStatusChange,
+  nextStatus,
+  actionLabel,
+  isReadyColumn = false,
 }) => {
-  const colorClasses = {
-    yellow: { header: 'bg-yellow-100 text-yellow-800 border-yellow-200', icon: 'text-yellow-600', count: 'bg-yellow-500' },
-    orange: { header: 'bg-orange-100 text-orange-800 border-orange-200', icon: 'text-orange-600', count: 'bg-orange-500' },
-    green:  { header: 'bg-green-100  text-green-800  border-green-200',  icon: 'text-green-600',  count: 'bg-green-500'  },
-  } as const;
-
-  const classes = colorClasses[color];
+  const headerColor =
+    color === 'yellow'
+      ? 'bg-yellow-50 text-yellow-800 border-yellow-200'
+      : color === 'orange'
+      ? 'bg-orange-50 text-orange-800 border-orange-200'
+      : 'bg-green-50 text-green-800 border-green-200';
 
   return (
-    <div className="space-y-4">
-      {/* Header */}
-      <div className={`p-4 rounded-lg border ${classes.header}`}>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Icon size={20} className={classes.icon} />
-            <h3 className="font-semibold">{title}</h3>
-          </div>
-          <span className={`px-2 py-1 ${classes.count} text-white text-sm font-bold rounded-full min-w-[24px] text-center`}>
-            {orders.length}
-          </span>
+    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden flex flex-col">
+      <div className={`flex items-center justify-between px-4 py-3 border-b ${headerColor}`}>
+        <div className="flex items-center gap-2">
+          <Icon size={18} className="opacity-80" />
+          <h4 className="font-semibold">{title}</h4>
         </div>
+        <span className="text-sm">{orders.length}</span>
       </div>
 
-      {/* Lista */}
-      <div className="space-y-4 min-h-[400px]">
+      <div className="p-3 space-y-3 min-h-[200px]">
         {orders.length === 0 ? (
-          <div className="border-2 border-dashed border-gray-200 rounded-lg p-8 text-center">
-            <Icon size={32} className="mx-auto mb-2 text-gray-300" />
-            <p className="text-sm text-gray-500">Sin pedidos</p>
-          </div>
+          <div className="text-center text-sm text-gray-400 py-6">Sin órdenes</div>
         ) : (
           orders.map(order => (
             <OrderCard
