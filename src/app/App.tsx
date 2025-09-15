@@ -55,7 +55,8 @@ export const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-red-50 to-orange-50">
+    <div className="min-h-screen bg-koi-gradient">
+      
       <div className="container-app">
         {/* Header */}
         <Header />

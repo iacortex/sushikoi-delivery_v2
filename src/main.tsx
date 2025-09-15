@@ -3,7 +3,15 @@ import ReactDOM from 'react-dom/client';
 import { App } from './app/App';
 import './styles/index.css';
 
-// Error boundary component
+/** 
+ * Activa el fondo pro (negro→rojo) global:
+ * - usamos body.koi-super (definido en index.css)
+ * - limpiamos la clase antigua 'koi' si existía
+ */
+document.body.classList.remove('koi');
+document.body.classList.add('koi-super');
+
+/* Error boundary */
 class ErrorBoundary extends React.Component<
   { children: React.ReactNode },
   { hasError: boolean; error?: Error }
@@ -12,15 +20,12 @@ class ErrorBoundary extends React.Component<
     super(props);
     this.state = { hasError: false };
   }
-
   static getDerivedStateFromError(error: Error) {
     return { hasError: true, error };
   }
-
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
     console.error('Error boundary caught an error:', error, errorInfo);
   }
-
   render() {
     if (this.state.hasError) {
       return (
@@ -34,10 +39,7 @@ class ErrorBoundary extends React.Component<
               Ocurrió un error inesperado en la aplicación. 
               Por favor, recarga la página para continuar.
             </p>
-            <button
-              onClick={() => window.location.reload()}
-              className="btn-primary w-full"
-            >
+            <button onClick={() => window.location.reload()} className="btn-primary w-full">
               Recargar Página
             </button>
             {process.env.NODE_ENV === 'development' && this.state.error && (
@@ -54,16 +56,11 @@ class ErrorBoundary extends React.Component<
         </div>
       );
     }
-
     return this.props.children;
   }
 }
 
-// Mount the app
-const root = ReactDOM.createRoot(
-  document.getElementById('root') as HTMLElement
-);
-
+const root = ReactDOM.createRoot(document.getElementById('root') as HTMLElement);
 root.render(
   <React.StrictMode>
     <ErrorBoundary>
