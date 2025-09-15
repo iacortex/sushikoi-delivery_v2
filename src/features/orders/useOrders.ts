@@ -5,7 +5,8 @@ import { STORAGE_KEYS, PACKING_TIME_MS } from '@/lib/constants';
 import { shortCode, formatAddress } from '@/lib/format';
 import { gmapsDir, wazeUrl, getOSRMRouteUrl } from '@/lib/urls';
 
-// Hook return interface
+const ORDERS_SYNC_EVENT = 'ORDERS_SYNC';
+
 interface UseOrdersReturn {
   orders: Order[];
   createOrder: (params: CreateOrderParams) => Promise<Order>;
@@ -17,7 +18,6 @@ interface UseOrdersReturn {
   deleteOrder: (orderId: number) => void;
 }
 
-// Create order parameters
 interface CreateOrderParams {
   customerData: CustomerFormData;
   cart: CartItem[];
@@ -26,84 +26,77 @@ interface CreateOrderParams {
   routeMeta?: RouteMeta | null;
 }
 
-/**
- * Hook for managing orders with localStorage persistence
- */
 export const useOrders = (): UseOrdersReturn => {
   const [orders, setOrders] = useLocalStorage<Order[]>(STORAGE_KEYS.ORDERS, []);
 
-  // Auto-mark packed orders when packing time expires
-  useEffect(() => {
-    const intervalId = setInterval(() => {
-      setOrders(prevOrders => 
-        prevOrders.map(order => {
-          if (
-            order.status === 'ready' &&
-            order.packUntil &&
-            !order.packed &&
-            Date.now() >= order.packUntil
-          ) {
-            return { ...order, packed: true };
-          }
-          return order;
-        })
-      );
-    }, 1000);
-
-    return () => clearInterval(intervalId);
+  // sync helpers
+  const broadcast = () => { try { window.dispatchEvent(new Event(ORDERS_SYNC_EVENT)); } catch {} };
+  const pullFromStorage = useCallback(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEYS.ORDERS);
+      if (!raw) return;
+      setOrders(JSON.parse(raw) as Order[]);
+    } catch {}
   }, [setOrders]);
 
-  // Fetch route data from OSRM
+  // autopack al vencer packUntil
+  useEffect(() => {
+    const id = setInterval(() => {
+      setOrders(prev =>
+        prev.map(o =>
+          o.status === 'ready' && o.packUntil && !o.packed && Date.now() >= o.packUntil
+            ? { ...o, packed: true }
+            : o
+        )
+      );
+    }, 1000);
+    return () => clearInterval(id);
+  }, [setOrders]);
+
+  // sync same-tab + otras pestañas
+  useEffect(() => {
+    const onSync = () => pullFromStorage();
+    const onStorage = (e: StorageEvent) => { if (e.key === STORAGE_KEYS.ORDERS) pullFromStorage(); };
+    window.addEventListener(ORDERS_SYNC_EVENT, onSync);
+    window.addEventListener('storage', onStorage);
+    return () => {
+      window.removeEventListener(ORDERS_SYNC_EVENT, onSync);
+      window.removeEventListener('storage', onStorage);
+    };
+  }, [pullFromStorage]);
+
   const fetchRoute = async (destLat: number, destLng: number): Promise<RouteMeta | null> => {
     try {
-      const response = await fetch(getOSRMRouteUrl(destLat, destLng));
-      const data = await response.json();
-      
+      const resp = await fetch(getOSRMRouteUrl(destLat, destLng));
+      const data = await resp.json();
       if (!data?.routes?.[0]) return null;
-      
       const route = data.routes[0];
       const points = route.geometry.coordinates.map(([lng, lat]: [number, number]) => [lat, lng] as [number, number]);
-      
-      return {
-        distance: route.distance,
-        duration: route.duration,
-        points,
-      };
-    } catch (error) {
-      console.warn('Route fetching failed:', error);
-      return null;
-    }
+      return { distance: route.distance, duration: route.duration, points };
+    } catch { return null; }
   };
 
-  // Calculate estimated cooking time from cart
-  const getEstimatedCookingTime = (cart: CartItem[]): number => {
-    return cart.reduce((max, item) => Math.max(max, item.cookingTime), 0);
-  };
+  const getEstimatedCookingTime = (cart: CartItem[]): number =>
+    cart.reduce((max, item) => Math.max(max, item.cookingTime), 0);
 
-  // Calculate cart total
-  const getCartTotal = (cart: CartItem[]): number => {
-    return cart.reduce((total, item) => total + (item.discountPrice * item.quantity), 0);
-  };
+  const getCartTotal = (cart: CartItem[]): number =>
+    cart.reduce((total, item) => total + (item.discountPrice * item.quantity), 0);
 
-  // Create new order
   const createOrder = useCallback(async (params: CreateOrderParams): Promise<Order> => {
     const { customerData, cart, coordinates, geocodePrecision, routeMeta } = params;
-    
-    const orderId = Date.now();
-    const addressStr = formatAddress(customerData.street, customerData.number, customerData.sector);
-    
-    // Fetch route if not provided
-    let finalRouteMeta = routeMeta;
-    if (!finalRouteMeta) {
-      finalRouteMeta = await fetchRoute(coordinates.lat, coordinates.lng);
-    }
+
+    const id = Date.now();
+    const addr = formatAddress(customerData.street, customerData.number, customerData.sector);
+
+    let finalRoute = routeMeta;
+    if (!finalRoute) finalRoute = await fetchRoute(coordinates.lat, coordinates.lng);
 
     const newOrder: Order = {
-      id: orderId,
-      publicCode: shortCode(orderId),
+      id,
+      publicCode: shortCode(id),
       name: customerData.name,
       phone: customerData.phone,
-      address: addressStr,
+      address: addr,
       city: customerData.city,
       references: customerData.references,
       cart: [...cart],
@@ -116,7 +109,7 @@ export const useOrders = (): UseOrdersReturn => {
       createdAt: Date.now(),
       cookingAt: null,
       estimatedTime: getEstimatedCookingTime(cart),
-      routeMeta: finalRouteMeta,
+      routeMeta: finalRoute,
       createdBy: 'Cajero',
       geocodePrecision: geocodePrecision as any,
       paymentMethod: customerData.paymentMethod,
@@ -126,77 +119,39 @@ export const useOrders = (): UseOrdersReturn => {
       packed: false,
     };
 
-    setOrders(prevOrders => [...prevOrders, newOrder]);
+    setOrders(prev => [...prev, newOrder]);
+    setTimeout(broadcast, 0);
     return newOrder;
   }, [setOrders]);
 
-  // Update order status
-  const updateOrderStatus = useCallback((orderId: number, newStatus: OrderStatus) => {
-    setOrders(prevOrders =>
-      prevOrders.map(order => {
-        if (order.id !== orderId) return order;
-
-        const updates: Partial<Order> = { status: newStatus };
-
-        // Set cooking timestamp when moving to cooking
-        if (newStatus === 'cooking' && !order.cookingAt) {
-          updates.cookingAt = Date.now();
-        }
-
-        // Set packing timer when moving to ready
-        if (newStatus === 'ready' && !order.packUntil) {
-          updates.packUntil = Date.now() + PACKING_TIME_MS;
-          updates.packed = false;
-        }
-
-        return { ...order, ...updates };
+  const updateOrderStatus = useCallback((orderId: number, status: OrderStatus) => {
+    setOrders(prev =>
+      prev.map(o => {
+        if (o.id !== orderId) return o;
+        const up: Partial<Order> = { status };
+        if (status === 'cooking' && !o.cookingAt) up.cookingAt = Date.now();
+        if (status === 'ready' && !o.packUntil) { up.packUntil = Date.now() + PACKING_TIME_MS; up.packed = false; }
+        return { ...o, ...up };
       })
     );
+    setTimeout(broadcast, 0);
   }, [setOrders]);
 
-  // Confirm payment for order
   const confirmPayment = useCallback((orderId: number) => {
-    setOrders(prevOrders =>
-      prevOrders.map(order =>
-        order.id === orderId
-          ? {
-              ...order,
-              paymentStatus: 'paid' as const,
-              paidAt: new Date().toISOString(),
-            }
-          : order
-      )
+    setOrders(prev =>
+      prev.map(o => (o.id === orderId ? { ...o, paymentStatus: 'paid' as const, paidAt: new Date().toISOString() } : o))
     );
+    setTimeout(broadcast, 0);
   }, [setOrders]);
 
-  // Get orders by status
-  const getOrdersByStatus = useCallback((status: OrderStatus) => {
-    return orders.filter(order => order.status === status);
-  }, [orders]);
+  const getOrdersByStatus = useCallback((status: OrderStatus) => orders.filter(o => o.status === status), [orders]);
+  const getOrderById = useCallback((id: number) => orders.find(o => o.id === id), [orders]);
+  const getOrderByCode = useCallback((code: string) => orders.find(o => shortCode(o.id) === code), [orders]);
 
-  // Get order by ID
-  const getOrderById = useCallback((id: number) => {
-    return orders.find(order => order.id === id);
-  }, [orders]);
-
-  // Get order by public code
-  const getOrderByCode = useCallback((code: string) => {
-    return orders.find(order => shortCode(order.id) === code);
-  }, [orders]);
-
-  // Delete order
   const deleteOrder = useCallback((orderId: number) => {
-    setOrders(prevOrders => prevOrders.filter(order => order.id !== orderId));
+    setOrders(prev => prev.filter(o => o.id !== orderId));
+    setTimeout(broadcast, 0);
   }, [setOrders]);
 
-  return {
-    orders,
-    createOrder,
-    updateOrderStatus,
-    confirmPayment,
-    getOrdersByStatus,
-    getOrderById,
-    getOrderByCode,
-    deleteOrder,
-  };
+  return { orders, createOrder, updateOrderStatus, confirmPayment, getOrdersByStatus, getOrderById, getOrderByCode, deleteOrder };
 };

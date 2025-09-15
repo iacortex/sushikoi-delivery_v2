@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { Monitor, Clock, Package, Bell, QrCode, Timer } from 'lucide-react';
+import { Monitor, Clock, Package, Bell,  Timer } from 'lucide-react';
 import type { Order } from '@/types';
 import { progressFor, minutesLeftFor } from '@/features/orders/helpers';
 import { shortCode } from '@/lib/format';

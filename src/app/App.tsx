@@ -1,111 +1,95 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import type { UserRole } from '@/types';
 import { useTicker } from '@/hooks/useTicker';
 import { useOrders } from '@/features/orders/useOrders';
 import { useCustomers } from '@/features/customers/useCustomers';
 
-// Layout components
+// Layout
 import { Header } from '@/components/layout/Header';
 import { RoleSelector } from '@/components/layout/RoleSelector';
+import OrientalBackground from '@/components/layout/OrientalBackground';
 
 // Dashboard
 import { Dashboard } from '@/components/dashboard/Dashboard';
 
-// Role-specific components
-// ✅ default import
+// Role-specific
 import CashierPanel from '@/components/cashier/CashierPanel';
+import { CookBoard } from '@/components/cook/CookBoard';
+import { KitchenNotifications } from '@/components/cook/KitchenNotificacions';
 
-// import { CookBoard } from '@/components/cook/CookBoard';
-// import { DeliveryList } from '@/components/delivery/DeliveryList';
-// import { ClientTracker } from '@/components/client/ClientTracker';
-
-export const App: React.FC = () => {
-  // Global ticker for real-time updates
+export function App() {
   useTicker();
 
-  // Global state
   const [userRole, setUserRole] = useState<UserRole>('cashier');
   const [showDashboard, setShowDashboard] = useState(false);
 
-  // Data hooks
+  // ✅ Instancia ÚNICA del estado de órdenes
   const orders = useOrders();
   const customers = useCustomers();
 
-  // Role change handler
   const handleRoleChange = (role: UserRole) => {
     setUserRole(role);
-    // Hide dashboard when switching roles
     setShowDashboard(false);
   };
+  const handleDashboardToggle = (show: boolean) => setShowDashboard(show);
 
-  // Dashboard toggle handler
-  const handleDashboardToggle = (show: boolean) => {
-    setShowDashboard(show);
-  };
-
-  // Get role title
   const getRoleTitle = (): string => {
     const titles = {
-      cashier: "🏪 Panel de Cajero/Vendedor",
-      cook: "👨‍🍳 Panel de Cocinero",
-      delivery: "🛵 Panel de Delivery",
-      client: "🙋 Panel de Cliente",
-    };
+      cashier: '🏪 Panel de Cajero/Vendedor',
+      cook: '👨‍🍳 Panel de Cocinero',
+      delivery: '🛵 Panel de Delivery',
+      client: '🙋 Panel de Cliente',
+    } as const;
     return titles[userRole];
   };
 
   return (
-    <div className="min-h-screen bg-koi-gradient">
-      
+    <div className="relative min-h-screen overflow-hidden">
+      <OrientalBackground density={44} showPattern />
+
       <div className="container-app">
-        {/* Header */}
         <Header />
 
-        {/* Role Selector */}
-        <RoleSelector
-          currentRole={userRole}
-          showDashboard={showDashboard}
-          onRoleChange={handleRoleChange}
-          onDashboardToggle={handleDashboardToggle}
-        />
+        <div className="mt-6 md:mt-8">
+          <RoleSelector
+            currentRole={userRole}
+            showDashboard={showDashboard}
+            onRoleChange={handleRoleChange}
+            onDashboardToggle={handleDashboardToggle}
+          />
+        </div>
 
-        {/* Content Area */}
         {showDashboard ? (
           <Dashboard orders={orders.orders} />
         ) : (
           <div>
-            {/* Role-specific content */}
             {userRole === 'cashier' && (
               <div className="w-full">
-                {/* CashierPanel ya incluye su propio header y navegación */}
-                <CashierPanel />
+                {/* 🔴 ESTA ES LA LÍNEA CRÍTICA */}
+                <CashierPanel ordersApi={orders} />
               </div>
             )}
 
             {userRole === 'cook' && (
-              <div>
-                {/* Role Title */}
-                <div className="section-header">
+              <div className="w-full space-y-4">
+                <div className="section-header flex items-center justify-between">
                   <h2 className="section-title">{getRoleTitle()}</h2>
+                  <KitchenNotifications orders={orders.orders} />
                 </div>
-                
-                <div className="p-4 bg-white rounded-lg shadow">
-                  <p>Panel de Cocinero - En desarrollo</p>
-                  <p className="text-sm text-gray-600 mt-2">
-                    Próximamente: Kanban de órdenes, tiempos de cocina, notificaciones
-                  </p>
-                </div>
+                {/* Cocina usa la MISMA lista y el MISMO mutador */}
+                <CookBoard
+                  orders={orders.orders}
+                  onStatusChange={orders.updateOrderStatus}
+                />
               </div>
             )}
 
             {userRole === 'delivery' && (
               <div>
-                {/* Role Title */}
                 <div className="section-header">
                   <h2 className="section-title">{getRoleTitle()}</h2>
                 </div>
-                
-                <div className="p-4 bg-white rounded-lg shadow">
+                <div className="p-4 koi-panel">
                   <p>Panel de Delivery - En desarrollo</p>
                   <p className="text-sm text-gray-600 mt-2">
                     Próximamente: Lista de entregas, mapas de rutas, estado GPS
@@ -116,12 +100,10 @@ export const App: React.FC = () => {
 
             {userRole === 'client' && (
               <div>
-                {/* Role Title */}
                 <div className="section-header">
                   <h2 className="section-title">{getRoleTitle()}</h2>
                 </div>
-                
-                <div className="p-4 bg-white rounded-lg shadow">
+                <div className="p-4 koi-panel">
                   <p>Panel de Cliente - En desarrollo</p>
                   <p className="text-sm text-gray-600 mt-2">
                     Próximamente: Seguimiento de pedidos, modo tótem, QR tracking
@@ -132,7 +114,6 @@ export const App: React.FC = () => {
           </div>
         )}
 
-        {/* Debug info in development */}
         {import.meta.env.DEV && userRole !== 'cashier' && (
           <div className="mt-8 p-4 bg-gray-100 rounded-lg text-sm text-gray-600">
             <h4 className="font-semibold mb-2">Debug Info:</h4>
@@ -146,8 +127,6 @@ export const App: React.FC = () => {
                 <p><strong>Customers:</strong> {customers.customers.length}</p>
               </div>
             </div>
-            
-            {/* Quick Stats */}
             <div className="mt-4 pt-4 border-t border-gray-300">
               <h5 className="font-medium mb-2">Quick Stats:</h5>
               <div className="flex gap-4 text-xs">
@@ -165,8 +144,6 @@ export const App: React.FC = () => {
                 </span>
               </div>
             </div>
-            
-            {/* Performance Info */}
             <div className="mt-2 text-xs text-gray-500">
               <p>Last update: {new Date().toLocaleTimeString('es-CL')}</p>
               <p>Environment: {import.meta.env.MODE}</p>
@@ -176,4 +153,4 @@ export const App: React.FC = () => {
       </div>
     </div>
   );
-};
+}

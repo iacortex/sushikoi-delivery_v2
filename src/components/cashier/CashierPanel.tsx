@@ -1,4 +1,3 @@
-// src/components/cashier/CashierPanel.tsx
 import React, { useEffect, useMemo, useState } from "react";
 import {
   ShoppingCart, User, Utensils, Package, DollarSign,
@@ -12,97 +11,54 @@ import { CustomerForm } from "../cashier/CustomerForm";
 import { getMenuItem } from "../../features/menu/catalog";
 import { KioskModal } from "../ui/KioskModal";
 
+// store compartido de órdenes
+import { useOrders } from "@/features/orders/useOrders";
+type OrdersApi = ReturnType<typeof useOrders>;
+
 /* ===================== Modo Tótem ===================== */
 const TOTEM_MODE = true;
 
-/* ===================== Tipos compartidos ===================== */
+/* ===================== Tipos UI ===================== */
 export interface CartItem {
-  id: number;
-  name: string;
-  description: string;
-  items: string[];
-  originalPrice: number;
-  discountPrice: number;
-  discount: number;
-  image: string;
-  popular: boolean;
-  cookingTime: number;
-  quantity: number;
+  id: number; name: string; description: string; items: string[];
+  originalPrice: number; discountPrice: number; discount: number;
+  image: string; popular: boolean; cookingTime: number; quantity: number;
 }
-
 type CashierTab = "dashboard" | "promotions" | "customer" | "cart" | "orders";
 
-/** Alineado con CustomerForm */
 interface CustomerFormData {
-  name: string;
-  phone: string;
-  street: string;
-  number: string;
-  sector: string;
-  city: string;
-  references: string;
+  name: string; phone: string; street: string; number: string;
+  sector: string; city: string; references: string;
   paymentMethod: 'efectivo' | 'debito' | 'credito' | 'transferencia' | 'mp';
-  paymentStatus: string;
-  dueMethod: string;
-  mpChannel?: 'delivery' | 'local';
+  paymentStatus: string; dueMethod: string; mpChannel?: 'delivery' | 'local';
 }
-
 interface FormErrors { [k: string]: string; }
 
-interface Order {
-  id: number;
-  publicCode: string;
-  name: string;
-  phone: string;
-  address: string;
-  total: number;
-  status: "pending" | "cooking" | "ready" | "delivered";
-  cart: CartItem[];
-  createdAt: number;
-  estimatedTime: number;
-  paymentMethod: string;
+interface OrderUI {
+  id: number; publicCode: string; name: string; phone: string; address: string;
+  total: number; status: "pending" | "cooking" | "ready" | "delivered";
+  cart: CartItem[]; createdAt: number; estimatedTime: number; paymentMethod: string;
 }
 
-/* ===== Tipos para extras ===== */
+/* ===== Extras ===== */
 type ServiceType = "delivery" | "local";
 type Protein = "pollo" | "salmon" | "camaron" | "kanikama" | "loco" | "pulpo";
-
 interface ChangeLine { from?: Protein; to?: Protein; fee: number; }
 interface SauceLine { qty: number; included?: number; extraFee?: number; feeTotal?: number; }
-
 interface OrderMeta {
-  service: ServiceType;
-  deliveryZone?: string;
-  deliveryFee?: number;
-  chopsticks?: number;
-  changes?: ChangeLine[];
-  soy?: SauceLine;
-  ginger?: SauceLine;
-  wasabi?: SauceLine;
-  agridulce?: SauceLine;
-  acevichada?: SauceLine;
-  extrasTotal?: number;
+  service: ServiceType; deliveryZone?: string; deliveryFee?: number; chopsticks?: number;
+  changes?: ChangeLine[]; soy?: SauceLine; ginger?: SauceLine; wasabi?: SauceLine;
+  agridulce?: SauceLine; acevichada?: SauceLine; extrasTotal?: number;
 }
-
 interface AddToCartPayload {
-  promotionId: number;
-  chopsticks: number;
-  service: ServiceType;
-  deliveryZone?: string;
-  deliveryFee?: number;
-  changes: ChangeLine[];
-  soy?: SauceLine;
-  ginger?: SauceLine;
-  wasabi?: SauceLine;
-  agridulce?: SauceLine;
-  acevichada?: SauceLine;
-  extrasTotal: number;
-  estimatedTotal: number;
+  promotionId: number; chopsticks: number; service: ServiceType;
+  deliveryZone?: string; deliveryFee?: number; changes: ChangeLine[];
+  soy?: SauceLine; ginger?: SauceLine; wasabi?: SauceLine; agridulce?: SauceLine; acevichada?: SauceLine;
+  extrasTotal: number; estimatedTotal: number;
 }
 
 /* ===================== Helpers ===================== */
 const formatCLP = (amount: number) => new Intl.NumberFormat("es-CL").format(amount);
-const generateOrderCode = () => Math.floor(10000 + Math.random() * 90000).toString();
 const timeAgo = (ts: number) => {
   const m = Math.floor((Date.now() - ts) / 60000);
   if (m < 1) return "Ahora";
@@ -110,8 +66,6 @@ const timeAgo = (ts: number) => {
   const h = Math.floor(m / 60);
   return `${h}h`;
 };
-
-// Suma extras del meta (delivery + cambios + salsas)
 const extrasFromMeta = (m?: OrderMeta) => {
   if (!m) return 0;
   const delivery = m.service === "delivery" ? (m.deliveryFee ?? 0) : 0;
@@ -130,27 +84,12 @@ type NType = "success" | "warning" | "error" | "info";
 interface Notification { id: number; type: NType; message: string; timestamp: number; }
 
 const Toast: React.FC<{ n: Notification; onClose: (id: number) => void }> = ({ n, onClose }) => {
-  useEffect(() => {
-    const t = setTimeout(() => onClose(n.id), 5000);
-    return () => clearTimeout(t);
-  }, [n.id, onClose]);
-
-  const Icon = () => {
-    switch (n.type) {
-      case "success": return <CheckCircle className="text-green-600" size={18} />;
-      case "warning": return <AlertCircle className="text-yellow-600" size={18} />;
-      case "error":   return <XCircle className="text-red-600" size={18} />;
-      default:        return <Bell className="text-blue-600" size={18} />;
-    }
-  };
-
-  const bg = {
-    success: "bg-green-50 border-green-200",
-    warning: "bg-yellow-50 border-yellow-200",
-    error:   "bg-red-50 border-red-200",
-    info:    "bg-blue-50 border-blue-200",
-  }[n.type];
-
+  useEffect(() => { const t = setTimeout(() => onClose(n.id), 5000); return () => clearTimeout(t); }, [n.id, onClose]);
+  const Icon = () => n.type === "success" ? <CheckCircle className="text-green-600" size={18} /> :
+                   n.type === "warning" ? <AlertCircle className="text-yellow-600" size={18} /> :
+                   n.type === "error"   ? <XCircle className="text-red-600" size={18} /> :
+                                          <Bell className="text-blue-600" size={18} />;
+  const bg = { success: "bg-green-50 border-green-200", warning: "bg-yellow-50 border-yellow-200", error: "bg-red-50 border-red-200", info: "bg-blue-50 border-blue-200" }[n.type];
   return (
     <div className={`${bg} border rounded-lg p-3 shadow-md animate-slide-in-right`}>
       <div className="flex items-start gap-2">
@@ -167,9 +106,7 @@ const Toast: React.FC<{ n: Notification; onClose: (id: number) => void }> = ({ n
   );
 };
 
-/* =========================================================
-   Guardia de Cambios de Proteína (solo 1 por defecto)
-   ========================================================= */
+/* ===== Guardia de cambios de proteína ===== */
 function enforceOneProteinChange(
   incoming: ChangeLine[] | undefined,
   confirmFn: (msg: string) => boolean,
@@ -177,36 +114,17 @@ function enforceOneProteinChange(
 ): ChangeLine[] {
   const list = incoming ?? [];
   if (list.length <= 1) return list;
-
   const wantsMore = confirmFn("Ya tienes 1 cambio de proteína. ¿Quieres agregar otro cambio?");
-  if (wantsMore) {
-    notify("info", "Se agregaron cambios de proteína adicionales.");
-    return list;
-  } else {
-    notify("warning", "Se aplicó solo 1 cambio de proteína.");
-    return [list[0]];
-  }
+  if (wantsMore) { notify("info", "Se agregaron cambios de proteína adicionales."); return list; }
+  notify("warning", "Se aplicó solo 1 cambio de proteína."); return [list[0]];
 }
 
-/* =============== Modal Detalle de Pedido (sin scroll) =============== */
-const OrderDetailModal: React.FC<{
-  open: boolean;
-  onClose: () => void;
-  order?: Order;
-}> = ({ open, onClose, order }) => {
+/* =============== Modal Detalle =============== */
+const OrderDetailModal: React.FC<{ open: boolean; onClose: () => void; order?: OrderUI; }> = ({ open, onClose, order }) => {
   if (!order) return null;
-
   return (
-    <KioskModal
-      open={open}
-      onClose={onClose}
-      title={`Pedido #${order.publicCode} — ${order.name}`}
-      subtitle={`${order.phone} • ${order.address}`}
-      designWidth={1100}
-      designHeight={700}
-    >
+    <KioskModal open={open} onClose={onClose} title={`Pedido #${order.publicCode} — ${order.name}`} subtitle={`${order.phone} • ${order.address}`} designWidth={1100} designHeight={700}>
       <div className="grid grid-cols-12 gap-4">
-        {/* Col izquierda: info + estado */}
         <div className="col-span-12 md:col-span-5 space-y-3">
           <div className="border rounded-lg p-3">
             <h4 className="font-semibold text-gray-900 mb-1">Resumen</h4>
@@ -217,23 +135,9 @@ const OrderDetailModal: React.FC<{
               <div>Método de pago: <span className="text-gray-600">{order.paymentMethod}</span></div>
             </div>
           </div>
-
-          <div className="border rounded-lg p-3">
-            <h4 className="font-semibold text-gray-900 mb-1">Cliente</h4>
-            <div className="text-sm text-gray-700 space-y-1">
-              <div><User className="inline mr-1" size={14}/> {order.name}</div>
-              <div>📞 {order.phone}</div>
-              <div>📍 {order.address}</div>
-            </div>
-          </div>
-
-          <div className="border rounded-lg p-3 bg-gray-50">
-            <div className="text-sm text-gray-700">Total</div>
-            <div className="text-2xl font-bold text-rose-600">${formatCLP(order.total)}</div>
-          </div>
+          <div className="border rounded-lg p-3"><h4 className="font-semibold text-gray-900 mb-1">Cliente</h4><div className="text-sm text-gray-700 space-y-1"><div><User className="inline mr-1" size={14}/> {order.name}</div><div>📞 {order.phone}</div><div>📍 {order.address}</div></div></div>
+          <div className="border rounded-lg p-3 bg-gray-50"><div className="text-sm text-gray-700">Total</div><div className="text-2xl font-bold text-rose-600">${formatCLP(order.total)}</div></div>
         </div>
-
-        {/* Col derecha: items */}
         <div className="col-span-12 md:col-span-7 space-y-3">
           <h4 className="font-semibold text-gray-900">Items</h4>
           <div className="space-y-2">
@@ -245,22 +149,15 @@ const OrderDetailModal: React.FC<{
                     <div className="font-semibold text-gray-900">{it.name}</div>
                     <div className="text-sm text-gray-600">x{it.quantity}</div>
                   </div>
-                  {!!it.items?.length && (
-                    <ul className="mt-1 text-xs text-gray-600 list-disc ml-4">
-                      {it.items.map((ln, idx) => <li key={idx}>{ln}</li>)}
-                    </ul>
-                  )}
+                  {!!it.items?.length && <ul className="mt-1 text-xs text-gray-600 list-disc ml-4">{it.items.map((ln, idx) => <li key={idx}>{ln}</li>)}</ul>}
                 </div>
                 <div className="text-right">
                   <div className="font-semibold">${formatCLP(it.discountPrice * it.quantity)}</div>
-                  {it.discount > 0 && (
-                    <div className="text-xs text-gray-500 line-through">${formatCLP(it.originalPrice * it.quantity)}</div>
-                  )}
+                  {it.discount > 0 && <div className="text-xs text-gray-500 line-through">${formatCLP(it.originalPrice * it.quantity)}</div>}
                 </div>
               </div>
             ))}
           </div>
-
           <div className="mt-2 text-sm text-gray-600 bg-gray-50 border rounded-lg p-3">
             <Clock className="inline mr-1 text-orange-500" size={16}/> Tiempo estimado: <b>{order.estimatedTime} min</b>
           </div>
@@ -271,21 +168,35 @@ const OrderDetailModal: React.FC<{
 };
 
 /* ===================== Componente Principal ===================== */
-const CashierPanel: React.FC = () => {
+type Props = { ordersApi?: OrdersApi };
+
+const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
   const [activeTab, setActiveTab] = useState<CashierTab>(TOTEM_MODE ? "promotions" : "dashboard");
+
+  // 🔗 ÓRDENES COMPARTIDAS
+  const { orders, createOrder: createOrderShared } = ordersApi ?? useOrders();
 
   // Carrito
   const [cart, setCart] = useState<CartItem[]>([]);
-
-  // Órdenes
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [selectedOrder, setSelectedOrder] = useState<Order | undefined>(undefined);
+  const [selectedOrder, setSelectedOrder] = useState<OrderUI | undefined>(undefined);
   const [showDetail, setShowDetail] = useState(false);
 
-  // Clientes
+  // Clientes demo
   const [customers, setCustomers] = useState<any[]>([]);
+  useEffect(() => {
+    const rand = (a: number, b: number) => Math.floor(Math.random() * (b - a + 1)) + a;
+    const pick = <T,>(arr: T[]) => arr[Math.floor(Math.random() * arr.length)];
+    const first = ["Juan","María","Camila","Javier","Daniela","Felipe","Francisca","Rodrigo","Paula","Ignacio","Valentina","Sebastián","Carolina","Diego","Constanza","Matías","Fernanda","Benjamín","Antonia","Tomás","Isidora","Vicente","Sofía","Gonzalo","Trinidad","Martina","Cristóbal","Joaquín","Josefa","Pedro","Pablo","Andrea","Katherine","Bárbara","Nicole","Álvaro","Verónica","Laura","Rocío","Patricio","Eduardo","Lorena","Marcos","Cecilia","Claudia","Renata","Martín","Agustín","Lucas","Mateo","Emilia","Emma","Amanda","Catalina","Ignacia","Maximiliano","Gabriel","Florencia","Josefina","Antonella","Bruno","Matilde","Julieta","Paz","Alexa","Franco","Gael","Thiago"];
+    const last  = ["Pérez","García","Soto","Fuentes","Rojas","Castro","Paredes","Morales","Díaz","Torres","Aguilar","Muñoz","Reyes","Herrera","Vargas","Silva","Navarro","Vega","Flores","Contreras","Araya","Oyarzo","Trujillo","Alvarado","Salinas","Medina","Campos","Almonacid","Lagos","Mansilla","Méndez","Vidal","Bahamonde","Leiva","González"];
+    const streets = ["Av. Capitán Ávalos","Los Aromos","Av. Angelmó","Volcán Osorno","Egaña","Av. La Cruz","Las Encinas","Camino La Vara","Lago Llanquihue","Puerto Sur","Cardonal","Av. Austral","Urmeneta","Av. Seminario","Los Notros","Altamira","Miraflores","Valle Volcanes","Alerce Norte","Alerce Sur","Mirasol","Chinquihue","Reloncaví","Presidente Ibáñez","Las Quemas","Coihuin"];
+    const sectors = ["Mirasol","Cardonal","Alerce Norte","Alerce Sur","Puerto Sur","Centro","Chinquihue","Mirasol Alto","Valle Volcanes","Mirasol Bajo"];
+    const cities  = ["Puerto Montt","Puerto Varas","Osorno","Castro"];
+    const mkPhone = (i: number) => `+56 9 9${(9000 + (i % 9000)).toString().padStart(4,"0")} ${(1000 + (i*7)%9000).toString().padStart(4,"0")}`;
+    const mkCustomer = (i: number) => ({ name: `${pick(first)} ${pick(last)}`, phone: mkPhone(i), street: pick(streets), number: String(rand(1,2500)), sector: Math.random()<.7?pick(sectors):"", city: pick(cities), references: "" });
+    setCustomers(Array.from({ length: 80 }, (_, i) => mkCustomer(i + 1)));
+  }, []);
 
-  // Form de cliente
+  // Cliente + errores + extras
   const [customerData, setCustomerData] = useState<CustomerFormData>({
     name: "", phone: "", street: "", number: "",
     sector: "", city: "Puerto Montt", references: "",
@@ -293,121 +204,16 @@ const CashierPanel: React.FC = () => {
   });
   const [errors, setErrors] = useState<FormErrors>({});
   const [isCreatingOrder, setIsCreatingOrder] = useState(false);
-
-  // Metadatos de extras
   const [orderMeta, setOrderMeta] = useState<OrderMeta | undefined>(undefined);
 
-  // UI clock
+  // reloj UI
   const [now, setNow] = useState(new Date());
-  useEffect(() => {
-    const t = setInterval(() => setNow(new Date()), 60000);
-    return () => clearInterval(t);
-  }, []);
+  useEffect(() => { const t = setInterval(() => setNow(new Date()), 60000); return () => clearInterval(t); }, []);
 
   // Toasts
   const [notifs, setNotifs] = useState<Notification[]>([]);
-  const notify = (type: NType, message: string) =>
-    setNotifs((p) => [{ id: Date.now(), type, message, timestamp: Date.now() }, ...p].slice(0, 5));
-  const dismiss = (id: number) => setNotifs((p) => p.filter((n) => n.id !== id));
-
-  /* ====== Datos iniciales (demo) ====== */
-/* ====== Datos iniciales (demo) ====== */
-useEffect(() => {
-  // --- helpers de demo ---
-  const rand = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
-  const pick = <T,>(arr: T[]) => arr[Math.floor(Math.random() * arr.length)];
-
-  const firstNames = [
-    "Juan","María","Camila","Javier","Daniela","Felipe","Francisca","Rodrigo","Paula","Ignacio",
-    "Valentina","Sebastián","Carolina","Diego","Constanza","Matías","Fernanda","Benjamín","Antonia","Tomás",
-    "Isidora","Vicente","Sofía","Gonzalo","Trinidad","Martina","Cristóbal","Joaquín","Josefa","Pedro",
-    "Pablo","Andrea","Katherine","Bárbara","Nicole","Felipe","Álvaro","Héctor","Mauricio","Verónica",
-    "Laura","Rocío","Patricio","Eduardo","Lorena","Marcos","Cecilia","Claudia","Fernanda","Renata",
-    "Martín","Agustín","Lucas","Mateo","Emilia","Emma","Amanda","Catalina","Ignacia","Trinidad",
-    "Maximiliano","Gabriel","Tomás","Vicente","Florencia","Josefina","Isidora","Emilia","Amanda","Antonella",
-    "Bruno","Matilde","René","Julieta","Paz","Alexa","Benjamín","Franco","Gael","Thiago"
-  ];
-  const lastNames = [
-    "Pérez","García","Soto","Fuentes","Rojas","Castro","Paredes","Morales","Díaz","Torres",
-    "Aguilar","Muñoz","Reyes","Herrera","Vargas","Silva","Navarro","Vega","Flores","Contreras",
-    "Araya","Oyarzo","Trujillo","Alvarado","Salinas","Cárdenas","Medina","Campos","Almonacid","Lagos",
-    "Mansilla","Cárdenas","Méndez","Cifuentes","Vidal","Bahamonde","Bórquez","Soto","Leiva","González"
-  ];
-  const streets = [
-    "Av. Capitán Ávalos","Los Aromos","Av. Angelmó","Volcán Osorno","Egaña","Av. La Cruz","Las Encinas",
-    "Camino La Vara","Paseo Talca","Lago Llanquihue","Puerto Sur","Cardonal","Vial","Av. Austral","Urmeneta",
-    "Av. Seminario","Los Notros","Laderas del Tepual","Altamira","Miraflores","Valle Volcanes","Alerce Norte",
-    "Alerce Sur","Mirasol","Chinquihue","Altos de Reloncaví","Av. Presidente Ibáñez","Las Quemas","Coihuin"
-  ];
-  const sectors = ["Mirasol","Cardonal","Alerce Norte","Alerce Sur","Puerto Sur","Centro","Chinquihue","Mirasol Alto","Valle Volcanes","Mirasol Bajo"];
-  const cities = ["Puerto Montt","Puerto Varas","Osorno","Castro"];
-
-  const mkPhone = (i: number) => {
-    // +56 9 9xxx xxxx (evita duplicados simples)
-    const block = (9000 + (i % 9000)).toString().padStart(4, "0");
-    const tail = (1000 + (i * 7) % 9000).toString().padStart(4, "0");
-    return `+56 9 9${block} ${tail}`;
-  };
-
-  const mkCustomer = (i: number) => {
-    const name = `${pick(firstNames)} ${pick(lastNames)}`;
-    const phone = mkPhone(i);
-    const street = pick(streets);
-    const number = String(rand(1, 2500));
-    const sector = Math.random() < 0.7 ? pick(sectors) : "";
-    const city = pick(cities);
-    const totalOrders = rand(1, 12);
-    const totalSpent = totalOrders * rand(7990, 28990);
-    const lastOrderAt = Date.now() - rand(1, 30) * 86400000 - rand(0, 12) * 3600000;
-    return { name, phone, street, number, sector, city, references: "", totalOrders, totalSpent, lastOrderAt };
-  };
-
-  // --- genera ~80 clientes demo ---
-  const demoCustomers = Array.from({ length: 80 }, (_, i) => mkCustomer(i + 1));
-  setCustomers(demoCustomers);
-
-  // --- genera órdenes demo usando clientes creados ---
-  const mkOrder = (
-    id: number, c: typeof demoCustomers[number], total: number, status: Order["status"], mins: number
-  ): Order => ({
-    id,
-    publicCode: generateOrderCode(),
-    name: c.name,
-    phone: c.phone,
-    address: `${c.street} ${c.number}${c.sector ? `, ${c.sector}` : ""}`,
-    total,
-    status,
-    cart: [{
-      id: 9000 + id,
-      name: "PROMO MIX",
-      description: "Mix frío + frito panko",
-      items: ["9 envuelto palta","9 california sésamo","9 frito panko salmón","9 frito panko pollo"],
-      originalPrice: total + 3000,
-      discountPrice: total,
-      discount: 10,
-      image: "🍣",
-      popular: true,
-      cookingTime: mins,
-      quantity: 1,
-    }],
-    createdAt: Date.now() - Math.floor(Math.random() * 900000),
-    estimatedTime: mins,
-    paymentMethod: "debito",
-  });
-
-  const orderTotals = [21990, 25990, 28990, 21990, 21990, 25990];
-  const orderStatuses: Order["status"][] = ["pending","cooking","ready","pending","cooking","ready"];
-  const ordersDemo: Order[] = Array.from({ length: 18 }, (_, idx) => {
-    const cust = demoCustomers[rand(0, demoCustomers.length - 1)];
-    const total = orderTotals[idx % orderTotals.length];
-    const status = orderStatuses[idx % orderStatuses.length];
-    const mins = [18, 22, 25, 20, 24, 28][idx % 6];
-    return mkOrder(Date.now() - (idx + 1) * 100000, cust, total, status, mins);
-  });
-
-  setOrders(ordersDemo);
-}, []);
-
+  const notify = (t: NType, m: string) => setNotifs(p => [{ id: Date.now(), type: t, message: m, timestamp: Date.now() }, ...p].slice(0, 5));
+  const dismiss = (id: number) => setNotifs(p => p.filter(n => n.id !== id));
 
   /* ====== Carrito ====== */
   const addToCart = (promotionId: number, hintedBasePrice?: number) => {
@@ -416,74 +222,33 @@ useEffect(() => {
     const name = item?.name ?? `Producto #${promotionId}`;
     const time = item?.time ?? 15;
     const description = item?.desc ?? "Item agregado desde Promociones";
-
     const existing = cart.find((it) => it.id === promotionId);
-    if (existing) {
-      setCart(cart.map((it) => it.id === promotionId ? { ...it, quantity: it.quantity + 1 } : it));
-    } else {
-      setCart((prev) => [
-        ...prev,
-        {
-          id: promotionId,
-          name,
-          description,
-          items: [],
-          originalPrice: unitPrice,
-          discountPrice: unitPrice,
-          discount: 0,
-          image: "🍣",
-          popular: false,
-          cookingTime: time,
-          quantity: 1,
-        },
-      ]);
-    }
-    notify("success", "Producto agregado al carrito");
-    setActiveTab("customer");
+    if (existing) setCart(cart.map((it) => it.id === promotionId ? { ...it, quantity: it.quantity + 1 } : it));
+    else setCart(prev => [...prev, { id: promotionId, name, description, items: [], originalPrice: unitPrice, discountPrice: unitPrice, discount: 0, image: "🍣", popular: false, cookingTime: time, quantity: 1 }]);
+    notify("success", "Producto agregado al carrito"); setActiveTab("customer");
   };
 
   const addToCartDetailed = (p: AddToCartPayload) => {
     const item = getMenuItem(p.promotionId);
-    const baseFromPayload = Math.max(0, (p.estimatedTotal ?? 0) - (p.extrasTotal ?? 0));
-    const unitPrice = item?.price ?? baseFromPayload ?? 0;
+    const base = Math.max(0, (p.estimatedTotal ?? 0) - (p.extrasTotal ?? 0));
+    const unitPrice = item?.price ?? base ?? 0;
     const name = item?.name ?? `Producto #${p.promotionId}`;
     const time = item?.time ?? 15;
     const description = item?.desc ?? "Item agregado desde Promociones";
 
     const existing = cart.find((it) => it.id === p.promotionId);
-    if (existing) {
-      setCart(cart.map((it) => it.id === p.promotionId ? { ...it, quantity: it.quantity + 1 } : it));
-    } else {
-      setCart((prev) => [
-        ...prev,
-        {
-          id: p.promotionId,
-          name,
-          description,
-          items: [],
-          originalPrice: unitPrice,
-          discountPrice: unitPrice,
-          discount: 0,
-          image: "🍣",
-          popular: false,
-          cookingTime: time,
-          quantity: 1,
-        },
-      ]);
-    }
+    if (existing) setCart(cart.map((it) => it.id === p.promotionId ? { ...it, quantity: it.quantity + 1 } : it));
+    else setCart(prev => [...prev, { id: p.promotionId, name, description, items: [], originalPrice: unitPrice, discountPrice: unitPrice, discount: 0, image: "🍣", popular: false, cookingTime: time, quantity: 1 }]);
 
-    // Enforce máx 1 cambio (con confirm para más)
-    const guardedChanges = enforceOneProteinChange(p.changes, window.confirm, notify);
-
-    // Acumular extras globales
-    setOrderMeta((prev) => {
+    const guarded = enforceOneProteinChange(p.changes, window.confirm, notify);
+    setOrderMeta(prev => {
       const nextService = p.service || prev?.service || "local";
       const next: OrderMeta = {
         service: nextService,
         deliveryZone: nextService === "delivery" ? (p.deliveryZone ?? prev?.deliveryZone) : undefined,
         deliveryFee: nextService === "delivery" ? (p.deliveryFee ?? prev?.deliveryFee ?? 0) : 0,
         chopsticks: (prev?.chopsticks || 0) + (p.chopsticks || 0),
-        changes: [...(prev?.changes || []), ...guardedChanges],
+        changes: [...(prev?.changes || []), ...guarded],
         soy:       { qty: (prev?.soy?.qty || 0) + (p.soy?.qty || 0),       included: (prev?.soy?.included || 0) + (p.soy?.included || 0),       extraFee: (prev?.soy?.extraFee || 0) + (p.soy?.extraFee ?? p.soy?.feeTotal ?? 0) },
         ginger:    { qty: (prev?.ginger?.qty || 0) + (p.ginger?.qty || 0), included: (prev?.ginger?.included || 0) + (p.ginger?.included || 0), extraFee: (prev?.ginger?.extraFee || 0) + (p.ginger?.extraFee ?? p.ginger?.feeTotal ?? 0) },
         wasabi:    { qty: (prev?.wasabi?.qty || 0) + (p.wasabi?.qty || 0), included: (prev?.wasabi?.included || 0) + (p.wasabi?.included || 0), extraFee: (prev?.wasabi?.extraFee || 0) + (p.wasabi?.extraFee ?? p.wasabi?.feeTotal ?? 0) },
@@ -496,42 +261,31 @@ useEffect(() => {
       return next;
     });
 
-    notify("success", "Detalle agregado (delivery/cambios/salsas)");
-    setActiveTab("customer");
+    notify("success", "Detalle agregado (delivery/cambios/salsas)"); setActiveTab("customer");
   };
 
-  const removeFromCart = (itemId: number) => {
-    const it = cart.find((i) => i.id === itemId);
-    setCart(cart.filter((i) => i.id !== itemId));
-    if (it) notify("info", `${it.name} eliminado del carrito`);
-  };
+  const removeFromCart = (id: number) => { const it = cart.find(i => i.id === id); setCart(cart.filter(i => i.id !== id)); if (it) notify("info", `${it.name} eliminado del carrito`); };
+  const updateQuantity = (id: number, q: number) => { if (q <= 0) return removeFromCart(id); setCart(cart.map(i => i.id === id ? { ...i, quantity: q } : i)); };
+  const clearCart = () => { setCart([]); setOrderMeta(undefined); notify("info", "Carrito vaciado"); };
 
-  const updateQuantity = (itemId: number, quantity: number) => {
-    if (quantity <= 0) return removeFromCart(itemId);
-    setCart(cart.map((i) => (i.id === itemId ? { ...i, quantity } : i)));
-  };
-
-  const clearCart = () => {
-    setCart([]);
-    setOrderMeta(undefined);
-    notify("info", "Carrito vaciado");
-  };
-
-  const cartTotal = useMemo(() => cart.reduce((sum, i) => sum + i.discountPrice * i.quantity, 0), [cart]);
-  const cartCount = useMemo(() => cart.reduce((sum, i) => sum + i.quantity, 0), [cart]);
-  const estimatedCooking = useMemo(() => cart.reduce((max, i) => Math.max(max, i.cookingTime), 0), [cart]);
+  const cartTotal = useMemo(() => cart.reduce((s, i) => s + i.discountPrice * i.quantity, 0), [cart]);
+  const cartCount = useMemo(() => cart.reduce((s, i) => s + i.quantity, 0), [cart]);
+  const estimatedCooking = useMemo(() => cart.reduce((m, i) => Math.max(m, i.cookingTime), 0), [cart]);
 
   /* ====== Cliente ====== */
   const selectCustomer = (c: any) => {
-    setCustomerData({
-      name: c.name || "", phone: c.phone || "",
-      street: c.street || "", number: c.number || "",
-      sector: c.sector || "", city: c.city || "Puerto Montt",
-      references: c.references || "",
-      paymentMethod: "debito", paymentStatus: "paid", dueMethod: "efectivo",
-    });
+    setCustomerData(prev => ({
+      ...prev,
+      name: c?.name ?? "",
+      phone: c?.phone ?? "",
+      street: c?.street ?? "",
+      number: "",
+      sector: c?.sector ?? "",
+      city: c?.city ?? "Puerto Montt",
+      references: c?.references ?? "",
+    }));
     setActiveTab("customer");
-    notify("info", `Cliente ${c.name} seleccionado`);
+    notify("info", `Cliente ${c?.name ?? "Sin nombre"} seleccionado`);
   };
 
   const validate = (): boolean => {
@@ -541,38 +295,29 @@ useEffect(() => {
     if (!customerData.street.trim()) e.street = "La calle es obligatoria";
     if (!customerData.number.trim()) e.number = "El número es obligatorio";
     if (cart.length === 0) e.cart = "Debe agregar al menos una promoción al carrito";
-    setErrors(e);
-    return Object.keys(e).length === 0;
+    setErrors(e); return Object.keys(e).length === 0;
   };
 
-  // Total final = carrito + extras
   const grandTotal = useMemo(() => cartTotal + extrasFromMeta(orderMeta), [cartTotal, orderMeta]);
 
   const createOrder = async () => {
     if (!validate()) { notify("error", "Complete todos los campos requeridos"); return; }
     setIsCreatingOrder(true);
     try {
-      const order: Order = {
-        id: Date.now(),
-        publicCode: generateOrderCode(),
-        name: customerData.name,
-        phone: customerData.phone,
-        address: `${customerData.street} ${customerData.number}${customerData.sector ? `, ${customerData.sector}` : ""}`,
-        total: grandTotal,
-        status: "pending",
-        cart: [...cart],
-        createdAt: Date.now(),
-        estimatedTime: estimatedCooking || 15,
-        paymentMethod: customerData.paymentMethod,
-      };
-      setOrders((p) => [order, ...p]);
+      const coords = { lat: -41.4717, lng: -72.9411 }; // temporal
+      const created = await createOrderShared({
+        customerData: customerData as any,
+        cart: cart as any,
+        coordinates: coords as any,
+        geocodePrecision: "approx" as any,
+        routeMeta: null,
+      });
+      setSelectedOrder(created as unknown as OrderUI);
+      setShowDetail(true);
       setCart([]); setOrderMeta(undefined);
       setCustomerData({ name: "", phone: "", street: "", number: "", sector: "", city: "Puerto Montt", references: "", paymentMethod: "debito", paymentStatus: "paid", dueMethod: "efectivo" });
       setErrors({}); setActiveTab("orders");
-      notify("success", `Pedido #${order.publicCode} creado`);
-      // Abre detalle automáticamente
-      setSelectedOrder(order);
-      setShowDetail(true);
+      notify("success", `Pedido #${created.publicCode} creado`);
     } catch {
       notify("error", "Error al crear pedido");
     } finally {
@@ -580,15 +325,17 @@ useEffect(() => {
     }
   };
 
-  /* ====== Métricas ====== */
+  /* ====== Métricas (del store) ====== */
   const todayOrders = orders.length;
   const todayRevenue = orders.reduce((s, o) => s + o.total, 0);
   const avgOrderValue = todayOrders ? Math.round(todayRevenue / todayOrders) : 0;
-  const pending = orders.filter((o) => o.status === "pending").length;
-  const cooking = orders.filter((o) => o.status === "cooking").length;
-  const ready   = orders.filter((o) => o.status === "ready").length;
+  const pending = orders.filter(o => o.status.toLowerCase() === "pending").length;
+  const cooking = orders.filter(o => o.status.toLowerCase() === "cooking").length;
+  const ready   = orders.filter(o => o.status.toLowerCase() === "ready").length;
 
-  const tabs: { key: CashierTab; label: string; icon: any; badge?: number }[] = [
+  /* ====== Tabs tipados con badge opcional ====== */
+  type TabItem = { key: CashierTab; label: string; icon: any; badge?: number };
+  const tabs: TabItem[] = [
     { key: "dashboard",  label: "Dashboard",   icon: BarChart3 },
     { key: "promotions", label: "Promociones", icon: Utensils },
     { key: "customer",   label: "Cliente",     icon: User },
@@ -637,7 +384,7 @@ useEffect(() => {
               >
                 <t.icon size={18} />
                 {t.label}
-                {t.badge != null && (
+                {typeof t.badge === "number" && (
                   <span className="bg-red-500 text-white text-xs px-2 py-1 rounded-full">{t.badge}</span>
                 )}
               </button>
@@ -646,11 +393,10 @@ useEffect(() => {
         </div>
 
         {/* Contenido por tab */}
-        <div className={TOTEM_MODE ? "animate-fade-in" : "animate-fade-in"}>
+        <div className="animate-fade-in">
           {/* Dashboard */}
           {activeTab === "dashboard" && (
             <div className="space-y-6">
-              {/* KPIs */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 <KpiCard icon={<Package className="text-blue-600" size={24} />} title="Órdenes Hoy" value={todayOrders} sub="+12% vs ayer" color="blue" />
                 <KpiCard icon={<DollarSign className="text-green-600" size={24} />} title="Ingresos Hoy" value={`$${formatCLP(todayRevenue)}`} sub="+8% vs ayer" color="green" />
@@ -658,11 +404,10 @@ useEffect(() => {
                 <KpiCard icon={<Clock className="text-orange-600" size={24} />} title="En Cocina" value={cooking} sub="Activos" color="orange" />
               </div>
 
-              {/* Estado rápido */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <StatusCard title="📋 Pendientes" value={pending} barColor="yellow" />
                 <StatusCard title="👨‍🍳 En Cocina" value={cooking} barColor="orange" />
-                <StatusCard title="✅ Listos" value={ready}   barColor="green" />
+                <StatusCard title="✅ Listos" value={ready} barColor="green" />
               </div>
             </div>
           )}
@@ -682,7 +427,7 @@ useEffect(() => {
               onUpdateQuantity={updateQuantity}
               onRemoveItem={removeFromCart}
               onClearCart={clearCart}
-              total={grandTotal} // subtotal + extras
+              total={grandTotal}
               estimatedTime={estimatedCooking || 15}
               onContinue={() => setActiveTab("customer")}
             />
@@ -725,7 +470,7 @@ useEffect(() => {
                       <div className="flex items-center gap-3">
                         <button
                           className="inline-flex items-center gap-1 px-3 py-2 text-sm border rounded-lg hover:bg-gray-50"
-                          onClick={() => { setSelectedOrder(o); setShowDetail(true); }}
+                          onClick={() => { setSelectedOrder(o as unknown as OrderUI); setShowDetail(true); }}
                           title="Ver detalle"
                         >
                           <Eye size={16}/> Detalle
@@ -744,12 +489,7 @@ useEffect(() => {
         </div>
       </div>
 
-      {/* Modal Detalle Pedido */}
-      <OrderDetailModal
-        open={showDetail}
-        onClose={() => setShowDetail(false)}
-        order={selectedOrder}
-      />
+      <OrderDetailModal open={showDetail} onClose={() => setShowDetail(false)} order={selectedOrder} />
     </div>
   );
 };

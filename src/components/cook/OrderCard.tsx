@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
-import { 
-  Clock, Package, Bell, User, Phone, MapPin, 
+import {
+  Clock, Package, Bell, User, Phone, MapPin,
   AlertTriangle, CheckCircle, Timer, Flame
 } from 'lucide-react';
 import type { Order, OrderStatus } from '@/types';
@@ -16,6 +16,9 @@ interface OrderCardProps {
   isReadyColumn?: boolean;
 }
 
+const norm = (s: string) =>
+  s.toLowerCase() as 'pending' | 'cooking' | 'ready' | 'delivered';
+
 export const OrderCard: React.FC<OrderCardProps> = ({
   order,
   onStatusChange,
@@ -23,71 +26,44 @@ export const OrderCard: React.FC<OrderCardProps> = ({
   actionLabel,
   isReadyColumn = false,
 }) => {
-  // Real-time calculations
   const progress = useMemo(() => progressFor(order), [order]);
   const minutesLeft = useMemo(() => minutesLeftFor(order), [order]);
-  
-  // Status configuration
-  const statusConfig = ORDER_STATUS_CONFIG[order.status];
-  
-  // Time calculations
+
+  const statusKey = norm(order.status as any);
+  const statusConfig = ORDER_STATUS_CONFIG[statusKey];
+
   const timeInfo = useMemo(() => {
     const now = Date.now();
-    const estimatedEnd = order.createdAt + (order.estimatedTime * 60_000);
-    const isOverdue = now > estimatedEnd && order.status !== 'delivered';
-    
-    // Cooking time calculations
+    const estimatedEnd = order.createdAt + order.estimatedTime * 60_000;
+    const isOverdue = now > estimatedEnd && statusKey !== 'delivered';
+
     let cookingElapsed = 0;
-    if (order.status === 'cooking' && order.cookingAt) {
+    if (statusKey === 'cooking' && order.cookingAt) {
       cookingElapsed = Math.floor((now - order.cookingAt) / 60_000);
     }
-    
-    // Packing time calculations
+
     let packingTimeLeft = 0;
     let packingExpired = false;
-    if (order.status === 'ready' && order.packUntil) {
+    if (statusKey === 'ready' && order.packUntil) {
       const remaining = order.packUntil - now;
       packingTimeLeft = Math.max(0, remaining);
       packingExpired = remaining <= 0 && !order.packed;
     }
-    
-    return {
-      isOverdue,
-      cookingElapsed,
-      packingTimeLeft,
-      packingExpired,
-      estimatedEnd,
-    };
-  }, [order]);
 
-  // Payment status
-  const paymentInfo = useMemo(() => {
-    const isPaid = order.paymentStatus === 'paid';
-    const method = isPaid ? order.paymentMethod : order.dueMethod;
-    return { isPaid, method };
-  }, [order.paymentStatus, order.paymentMethod, order.dueMethod]);
+    return { isOverdue, cookingElapsed, packingTimeLeft, packingExpired, estimatedEnd };
+  }, [order, statusKey]);
 
-  // Handle status change
   const handleStatusChange = () => {
-    if (nextStatus) {
-      onStatusChange(order.id, nextStatus);
-    }
+    if (nextStatus) onStatusChange(order.id, nextStatus);
   };
 
-  // Card styling based on urgency
   const getCardClasses = () => {
     let classes = 'card hover:shadow-lg transition-all duration-200 ';
-    
-    if (timeInfo.isOverdue) {
-      classes += 'border-red-300 bg-red-50 ';
-    } else if (timeInfo.packingExpired) {
-      classes += 'border-amber-300 bg-amber-50 ';
-    } else if (order.status === 'ready') {
-      classes += 'border-green-300 bg-green-50 ';
-    } else {
-      classes += 'border-gray-200 ';
-    }
-    
+    if (timeInfo.isOverdue) classes += 'border-red-300 bg-red-50 ';
+    else if (timeInfo.packingExpired) classes += 'border-amber-300 bg-amber-50 ';
+    else if (statusKey === 'ready') classes += 'border-green-300 bg-green-50 ';
+    else classes += 'border-gray-200 ';
+    if (isReadyColumn && statusKey === 'ready') classes += ' ring-1 ring-green-300 ';
     return classes;
   };
 
@@ -105,17 +81,17 @@ export const OrderCard: React.FC<OrderCardProps> = ({
                 {shortCode(order.id)}
               </span>
             </div>
-            
+
             <div className="flex items-center gap-2 text-sm text-gray-600 mb-1">
               <User size={14} />
               <span className="font-medium">{order.name}</span>
             </div>
-            
+
             <div className="flex items-center gap-2 text-xs text-gray-500">
               <Phone size={12} />
               <span>{order.phone}</span>
             </div>
-            
+
             <p className="text-xs text-gray-500 mt-1">
               {new Date(order.createdAt).toLocaleTimeString('es-CL')}
             </p>
@@ -123,14 +99,21 @@ export const OrderCard: React.FC<OrderCardProps> = ({
 
           {/* Status Badge */}
           <div className={`status-pill ${statusConfig.color}`}>
-            {order.status === 'pending' && <Clock size={14} />}
-            {order.status === 'cooking' && <Package size={14} />}
-            {order.status === 'ready' && <Bell size={14} />}
+            {statusKey === 'pending' && <Clock size={14} />}
+            {statusKey === 'cooking' && <Package size={14} />}
+            {statusKey === 'ready' && <Bell size={14} />}
             <span>{statusConfig.label}</span>
           </div>
         </div>
 
-        {/* Order Items */}
+        {isReadyColumn && statusKey === 'ready' && (
+          <div className="flex items-center gap-2 text-green-700 text-xs mb-3">
+            <CheckCircle size={14} />
+            <span className="font-medium">Listo para entregar</span>
+          </div>
+        )}
+
+        {/* Items */}
         <div className="mb-4">
           <h5 className="font-semibold text-gray-700 mb-2 text-sm">Pedido:</h5>
           <ul className="text-sm space-y-1">
@@ -148,9 +131,8 @@ export const OrderCard: React.FC<OrderCardProps> = ({
           </ul>
         </div>
 
-        {/* Time Information */}
+        {/* Time Info */}
         <div className="mb-4 space-y-2">
-          {/* Estimated Time */}
           <div className="flex items-center justify-between text-sm">
             <span className="text-gray-600">Tiempo estimado:</span>
             <span className="font-medium text-orange-600">
@@ -158,8 +140,7 @@ export const OrderCard: React.FC<OrderCardProps> = ({
             </span>
           </div>
 
-          {/* Cooking Time (if cooking) */}
-          {order.status === 'cooking' && (
+          {statusKey === 'cooking' && (
             <div className="flex items-center justify-between text-sm">
               <span className="text-gray-600">Cocinando:</span>
               <span className="font-medium text-blue-600">
@@ -168,7 +149,6 @@ export const OrderCard: React.FC<OrderCardProps> = ({
             </div>
           )}
 
-          {/* Progress Bar */}
           <div className="space-y-1">
             <div className="flex justify-between text-xs">
               <span className="text-gray-500">{progress.label}</span>
@@ -177,14 +157,13 @@ export const OrderCard: React.FC<OrderCardProps> = ({
               </span>
             </div>
             <div className="progress-bar">
-              <div 
+              <div
                 className="progress-fill"
                 style={{ width: `${progress.pct}%` }}
               />
             </div>
           </div>
 
-          {/* Overdue Warning */}
           {timeInfo.isOverdue && (
             <div className="flex items-center gap-2 text-red-600 text-sm">
               <AlertTriangle size={14} />
@@ -193,8 +172,8 @@ export const OrderCard: React.FC<OrderCardProps> = ({
           )}
         </div>
 
-        {/* Packing Timer (Ready orders) */}
-        {order.status === 'ready' && order.packUntil && (
+        {/* Packing Timer */}
+        {statusKey === 'ready' && order.packUntil && (
           <div className="mb-4">
             <PackingTimer
               packUntil={order.packUntil}
@@ -204,7 +183,7 @@ export const OrderCard: React.FC<OrderCardProps> = ({
           </div>
         )}
 
-        {/* Payment Info */}
+        {/* Payment */}
         <div className="mb-4 p-3 bg-gray-50 rounded-lg">
           <div className="flex items-center justify-between text-sm">
             <span className="text-gray-600">Total:</span>
@@ -212,29 +191,35 @@ export const OrderCard: React.FC<OrderCardProps> = ({
               ${formatCLP(order.total)}
             </span>
           </div>
-          
+
           <div className="flex items-center justify-between text-xs mt-1">
             <span className="text-gray-500">Pago:</span>
             <div className="flex items-center gap-2">
-              <span className={`px-2 py-0.5 rounded text-xs ${
-                paymentInfo.isPaid 
-                  ? 'bg-green-100 text-green-700' 
-                  : 'bg-red-100 text-red-700'
-              }`}>
-                {paymentInfo.isPaid ? 'Pagado' : 'Por pagar'}
+              <span
+                className={`px-2 py-0.5 rounded text-xs ${
+                  order.paymentStatus === 'paid'
+                    ? 'bg-green-100 text-green-700'
+                    : 'bg-red-100 text-red-700'
+                }`}
+              >
+                {order.paymentStatus === 'paid' ? 'Pagado' : 'Por pagar'}
               </span>
               <span className="text-gray-500 capitalize">
-                {paymentInfo.method}
+                {order.paymentStatus === 'paid'
+                  ? order.paymentMethod
+                  : order.dueMethod}
               </span>
             </div>
           </div>
         </div>
 
-        {/* Address (for reference) */}
+        {/* Address */}
         <div className="mb-4 text-xs text-gray-500">
           <div className="flex items-center gap-1">
             <MapPin size={10} />
-            <span>{order.address}, {order.city}</span>
+            <span>
+              {order.address}, {order.city}
+            </span>
           </div>
           {order.references && (
             <p className="mt-1 text-blue-600">
@@ -243,12 +228,12 @@ export const OrderCard: React.FC<OrderCardProps> = ({
           )}
         </div>
 
-        {/* Action Button */}
+        {/* Action */}
         {nextStatus && actionLabel && (
           <button
             onClick={handleStatusChange}
             className={`w-full font-medium py-2 px-4 rounded-lg transition-colors flex items-center justify-center gap-2 ${
-              nextStatus === 'cooking' 
+              nextStatus === 'cooking'
                 ? 'bg-orange-500 hover:bg-orange-600 text-white'
                 : nextStatus === 'ready'
                 ? 'bg-green-500 hover:bg-green-600 text-white'
@@ -265,17 +250,16 @@ export const OrderCard: React.FC<OrderCardProps> = ({
   );
 };
 
-// Packing timer component
 interface PackingTimerProps {
   packUntil: number;
   packed: boolean;
   expired: boolean;
 }
 
-const PackingTimer: React.FC<PackingTimerProps> = ({ 
-  packUntil, 
-  packed, 
-  expired 
+const PackingTimer: React.FC<PackingTimerProps> = ({
+  packUntil,
+  packed,
+  expired,
 }) => {
   const timeRemaining = Math.max(0, packUntil - Date.now());
   const formattedTime = formatTimeRemaining(timeRemaining);
@@ -309,18 +293,16 @@ const PackingTimer: React.FC<PackingTimerProps> = ({
           {formattedTime}
         </span>
       </div>
-      
+
       <div className="mt-2">
         <div className="w-full h-2 bg-amber-200 rounded-full overflow-hidden">
-          <div 
+          <div
             className="h-2 bg-amber-500 transition-all duration-1000 ease-linear"
-            style={{ 
-              width: `${Math.max(0, (timeRemaining / 90_000) * 100)}%` 
-            }}
+            style={{ width: `${Math.max(0, (timeRemaining / 90_000) * 100)}%` }}
           />
         </div>
       </div>
-      
+
       <p className="text-xs text-amber-700 mt-1 text-center">
         Se marcará automáticamente como empacado cuando expire
       </p>

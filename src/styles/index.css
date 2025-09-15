@@ -6,14 +6,10 @@
    PALETA SUSHIKOI (variables)
 =================================== */
 :root{
-  --koi-red:   #C00000;  /* rojo del logo */
-  --koi-black: #0A0A0A;  /* negro intenso */
-  --koi-white: #FFFFFF;  /* blanco */
-  --koi-gray:  #E0E0E0;  /* gris claro */
-
-  /* Intensidades del glow (0..1) */
-  --koi-glow:  .95;
-  --koi-lobes: .90;
+  --koi-red:#C00000;
+  --koi-black:#0A0A0A;
+  --koi-white:#FFFFFF;
+  --koi-gray:#E0E0E0;
 }
 
 /* ================================
@@ -25,23 +21,8 @@
     scroll-behavior: smooth;
   }
 
-  /* Mantén solo altura mínima; el fondo lo maneja body.koi-super o .koi-bg */
+  /* El fondo lo maneja OrientalBackground (bg-koi-hero) */
   body { @apply min-h-screen; }
-
-  /* Fondo global: usa document.body.classList.add('koi-super') en main.tsx */
-  body.koi-super{
-    background:
-      /* base negro suave (sin banding) */
-      radial-gradient(120% 160% at 50% 10%, #121212 0%, #0A0A0A 55%, #0A0A0A 60%),
-      /* glow rojo inferior */
-      radial-gradient(140% 110% at 50% 120%, rgba(192,0,0,.42) 0%, rgba(192,0,0,.18) 38%, rgba(192,0,0,0) 60%),
-      /* oscurecido de bordes para profundidad */
-      linear-gradient(180deg, rgba(0,0,0,.35) 0%, rgba(0,0,0,0) 40%, rgba(0,0,0,.45) 100%);
-    background-color: #0A0A0A;
-    background-repeat: no-repeat;
-    background-attachment: fixed;
-    min-height: 100dvh;
-  }
 
   /* Focus accesible */
   *:focus { @apply outline-none ring-2 ring-red-500/50 ring-offset-2; }
@@ -73,6 +54,17 @@
   .card-body   { @apply p-6; }
   .card-footer { @apply px-6 py-4 border-t border-gray-100 bg-gray-50; }
 
+  /* Panel blanco limpio para “hero” y bloques grandes */
+  .koi-panel { @apply bg-white rounded-2xl shadow-[0_8px_24px_-12px_rgba(0,0,0,.45)] ring-1 ring-black/5; }
+
+  /* Header glass (si lo usas en variante barra) */
+  .koi-header{
+    @apply sticky top-0 z-40 border-b;
+    background: rgba(10,10,10,0.55);
+    backdrop-filter: blur(10px);
+    border-color: rgba(255,255,255,0.08);
+  }
+
   /* Inputs */
   .input       { @apply w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent transition-colors duration-200; }
   .input-error { @apply border-red-500 focus:ring-red-500; }
@@ -93,8 +85,8 @@
   /* Layout */
   .container-app   { @apply container mx-auto px-4 py-8 max-w-7xl; }
   .section-header  { @apply text-center mb-6; }
-  .section-title   { @apply text-2xl font-bold text-gray-100 mb-2; } /* mejor contraste sobre fondo oscuro */
-  .section-subtitle{ @apply text-gray-300; }
+  .section-title   { @apply text-2xl font-bold text-white mb-2; }
+  .section-subtitle{ @apply text-white/70; }
 
   .grid-promotions { @apply grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6; }
   .grid-orders     { @apply grid grid-cols-1 lg:grid-cols-2 gap-6; }
@@ -102,75 +94,49 @@
 
   .form-grid  { @apply grid grid-cols-1 md:grid-cols-2 gap-4; }
   .form-row   { @apply flex flex-col space-y-1; }
-  .form-label { @apply block text-sm font-medium text-gray-200 mb-1; }
-  .form-error { @apply text-red-400 text-xs mt-1 flex items-center gap-1; }
+  .form-label { @apply block text-sm font-medium text-gray-700 mb-1; }
+  .form-error { @apply text-red-500 text-xs mt-1 flex items-center gap-1; }
 
-  .qr-container { @apply bg-white/5 backdrop-blur rounded-lg p-4 text-center border border-white/10; }
+  .qr-container { @apply bg-gray-50 rounded-lg p-4 text-center border; }
   .qr-image     { @apply mx-auto mb-4 border rounded-lg shadow-sm; }
 
   .flex-2 { flex: 2; }
-
-  /* ---------- KOI BACKGROUND (por vista) ---------- */
-  .koi-bg{
-    @apply relative min-h-screen;
-    background:
-      radial-gradient(120% 160% at 50% 10%, #121212 0%, #0A0A0A 55%, #0A0A0A 60%),
-      radial-gradient(140% 110% at 50% 120%, rgba(192,0,0,.42) 0%, rgba(192,0,0,.18) 38%, rgba(192,0,0,0) 60%),
-      linear-gradient(180deg, rgba(0,0,0,.35) 0%, rgba(0,0,0,0) 40%, rgba(0,0,0,.45) 100%);
-    background-color: #0A0A0A;
-    background-repeat: no-repeat;
-    background-attachment: fixed;
-  }
-
-  /* Panel/surface sobre fondo oscuro */
-  .koi-surface{ @apply bg-white text-black rounded-xl shadow-lg border border-black/5; }
-
-  /* Header glass (sticky) */
-  .koi-header{
-    @apply sticky top-0 z-40 border-b;
-    background: rgba(10,10,10,0.55);
-    backdrop-filter: blur(10px);
-    border-color: rgba(255,255,255,0.08);
-  }
-
-  /* Panel glass blanco (para el “hero” del header y bloques grandes) */
-  .koi-panel{
-    @apply rounded-2xl border shadow-lg;
-    background: rgba(255,255,255,0.86);
-    backdrop-filter: saturate(140%) blur(8px);
-    border-color: rgba(255,255,255,0.55);
-    box-shadow: 0 8px 30px -12px rgba(0,0,0,.45);
-  }
 }
 
 /* ================================
-   UTILITIES
+   UTILITIES (fondo oriental)
 =================================== */
 @layer utilities {
-  /* Textura de ruido sutil (grain cinematográfico) */
-  .koi-noise{
-    background-image: url("data:image/svg+xml;utf8,\
-<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'>\
-<filter id='n'><feTurbulence type='fractalNoise' baseFrequency='1.0' numOctaves='2' stitchTiles='stitch'/></filter>\
-<rect width='100%' height='100%' filter='url(%23n)' opacity='0.02'/></svg>");
-    background-size: 260px 260px;
+  /* Patrón japonés (seigaiha) MUY sutil, usado por OrientalBackground */
+  .koi-pattern {
+    background-image:
+      radial-gradient(circle at 10px 8px, rgba(255,255,255,.06) 7px, transparent 8px),
+      radial-gradient(circle at 0 0,     rgba(255,255,255,.06) 7px, transparent 8px);
+    background-size: 20px 16px;
+    background-position: 0 0, 10px 8px;
+    opacity: .06;
+    mix-blend-mode: soft-light;
   }
 
+  /* Elementos decorativos (koi, nigiri, maki, pétalos) */
+  .koi-ornament {
+    @apply absolute select-none pointer-events-none;
+    color: rgba(255,255,255,0.15);
+    filter: drop-shadow(0 6px 12px rgba(0,0,0,.35));
+  }
+  .koi-ornament-red { color: rgba(192,0,0,0.22); }
+
+  /* Respeta reduce-motion (anula animaciones de Tailwind configuradas) */
+  @media (prefers-reduced-motion: reduce) {
+    .animate-koi-float-slow,
+    .animate-petal-drift { animation: none !important; }
+  }
+
+  /* Aspect ratios & safe-area */
   .aspect-square { aspect-ratio: 1 / 1; }
   .aspect-video  { aspect-ratio: 16 / 9; }
-
-  .safe-area-inset{
+  .safe-area-inset {
     padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
-  }
-
-  /* Fallback por si quieres aplicar el fondo a un contenedor puntual */
-  .bg-koi-black-red-fallback{
-    background: radial-gradient(120% 160% at 50% 10%, #121212 0%, #0A0A0A 55%, #0A0A0A 60%),
-                radial-gradient(140% 110% at 50% 120%, rgba(192,0,0,.42) 0%, rgba(192,0,0,.18) 38%, rgba(192,0,0,0) 60%),
-                linear-gradient(180deg, rgba(0,0,0,.35) 0%, rgba(0,0,0,0) 40%, rgba(0,0,0,.45) 100%);
-    background-color: #0A0A0A;
-    background-repeat: no-repeat;
-    background-attachment: fixed;
   }
 }
 
