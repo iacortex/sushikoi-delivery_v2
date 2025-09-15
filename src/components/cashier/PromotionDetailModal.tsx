@@ -1,3 +1,4 @@
+// src/components/cashier/PromotionDetailModal.tsx
 import React, { useEffect, useMemo, useState } from "react";
 import { KioskModal } from "../ui/KioskModal";
 import { DELIVERY_ZONES } from "@/features/menu/catalog";
@@ -20,13 +21,13 @@ export interface AddToCartPayload {
   wasabi?: SauceLine;
   agridulce?: SauceLine;
   acevichada?: SauceLine;
-  note?: string; // ✅ nota viaja en el payload
+  note?: string;
   extrasTotal: number;
   estimatedTotal: number;
 }
 
 const CLP = (n: number) => new Intl.NumberFormat("es-CL").format(Math.max(0, Math.round(n)));
-const PROTEINS: Protein[] = ["pollo", "salmon", "camaron", "kanikama"];
+const PROTEINS: Protein[] = ["pollo","salmon","camaron","kanikama"];
 
 const FEES = {
   proteinChange: 1500,
@@ -74,6 +75,8 @@ type Props = {
   basePrice?: number;
   baseTime?: number;
   name?: string;
+  /** Opcional: forzar si es promo grande (si no, se detecta por el nombre) */
+  isLargePromo?: boolean;
   onConfirm: (payload: AddToCartPayload) => void;
 };
 
@@ -84,6 +87,7 @@ const PromotionDetailModal: React.FC<Props> = ({
   basePrice = 0,
   baseTime = 15,
   name = `Producto #${promotionId}`,
+  isLargePromo: isLargePromoProp,
   onConfirm,
 }) => {
   const [service, setService] = useState<ServiceType>("local");
@@ -92,10 +96,7 @@ const PromotionDetailModal: React.FC<Props> = ({
   const ZONE_FEES = useMemo(() => toZoneFeeMap(DELIVERY_ZONES as unknown), []);
   const [zone, setZone] = useState<string>("");
 
-  const deliveryFee = useMemo(
-    () => (service === "delivery" ? ZONE_FEES[zone] ?? 0 : 0),
-    [service, zone, ZONE_FEES]
-  );
+  const deliveryFee = useMemo(() => (service === "delivery" ? (ZONE_FEES[zone] ?? 0) : 0), [service, zone, ZONE_FEES]);
 
   const [fromProtein, setFromProtein] = useState<Protein | undefined>();
   const [toProtein, setToProtein] = useState<Protein | undefined>();
@@ -104,20 +105,38 @@ const PromotionDetailModal: React.FC<Props> = ({
     return FEES.proteinChange;
   }, [fromProtein, toProtein]);
 
+  // === Detecta si es "promo grande" por nombre si no viene prop ===
+  const isLargePromo = useMemo(() => {
+    if (typeof isLargePromoProp === "boolean") return isLargePromoProp;
+    const m = name?.match(/(\d+)\s*(bocados|piezas|pcs)/i);
+    if (m) {
+      const n = parseInt(m[1], 10);
+      if (!isNaN(n) && n >= 30) return true;
+    }
+    if (/koi\s*mix|familiar/i.test(name || "")) return true;
+    return false;
+  }, [name, isLargePromoProp]);
+
+  // === Salsas (contadores parten en 0) ===
   const [soyQty, setSoyQty] = useState(0);
   const [gingerQty, setGingerQty] = useState(0);
   const [wasabiQty, setWasabiQty] = useState(0);
-  const included = 2;
-  const soyExtraFee = Math.max(0, soyQty - included) * FEES.soyUnit;
-  const gingerExtraFee = Math.max(0, gingerQty - included) * FEES.gingerUnit;
-  const wasabiExtraFee = Math.max(0, wasabiQty - included) * FEES.wasabiUnit;
+
+  // ✅ Inclusiones dinámicas:
+  const includedSoy = isLargePromo ? 5 : 1;  // promos grandes: 5 soya, individuales: 1
+  const includedGinger = 1;                  // 1 jengibre gratis
+  const includedWasabi = 1;                  // 1 wasabi gratis
+
+  const soyExtraFee = Math.max(0, soyQty - includedSoy) * FEES.soyUnit;
+  const gingerExtraFee = Math.max(0, gingerQty - includedGinger) * FEES.gingerUnit;
+  const wasabiExtraFee = Math.max(0, wasabiQty - includedWasabi) * FEES.wasabiUnit;
 
   const [agridulceQty, setAgridulceQty] = useState(0);
   const [acevichadaQty, setAcevichadaQty] = useState(0);
   const agridulceFeeTotal = agridulceQty * FEES.agridulceUnit;
   const acevichadaFeeTotal = acevichadaQty * FEES.acevichadaUnit;
 
-  // ✅ Nota para cocina (se muestra en la derecha para no perderla)
+  // Nota para cocina (a la derecha, arriba)
   const [note, setNote] = useState("");
   const NOTE_MAX = 140;
 
@@ -142,6 +161,7 @@ const PromotionDetailModal: React.FC<Props> = ({
     setZone("");
     setFromProtein(undefined);
     setToProtein(undefined);
+    // contadores en 0 aunque haya gratis
     setSoyQty(0);
     setGingerQty(0);
     setWasabiQty(0);
@@ -162,9 +182,10 @@ const PromotionDetailModal: React.FC<Props> = ({
       deliveryZone: service === "delivery" ? zone : undefined,
       deliveryFee: service === "delivery" ? deliveryFee : 0,
       changes,
-      soy: { qty: soyQty, included, extraFee: soyExtraFee },
-      ginger: { qty: gingerQty, included, extraFee: gingerExtraFee },
-      wasabi: { qty: wasabiQty, included, extraFee: wasabiExtraFee },
+      // pasamos "included" por salsa para el backend
+      soy: { qty: soyQty, included: includedSoy, extraFee: soyExtraFee },
+      ginger: { qty: gingerQty, included: includedGinger, extraFee: gingerExtraFee },
+      wasabi: { qty: wasabiQty, included: includedWasabi, extraFee: wasabiExtraFee },
       agridulce: { qty: agridulceQty, feeTotal: agridulceFeeTotal },
       acevichada: { qty: acevichadaQty, feeTotal: acevichadaFeeTotal },
       note: note.trim() || undefined,
@@ -185,7 +206,7 @@ const PromotionDetailModal: React.FC<Props> = ({
       designHeight={680}
     >
       <div className="grid grid-cols-12 gap-4">
-        {/* Izquierda — hace scroll para no cortar nada */}
+        {/* Izquierda (scrolleable para no cortar) */}
         <div className="col-span-12 md:col-span-7 space-y-3 md:max-h-[62vh] overflow-y-auto pr-1">
           {/* Servicio */}
           <div className="border rounded-lg p-3">
@@ -238,7 +259,7 @@ const PromotionDetailModal: React.FC<Props> = ({
             )}
           </div>
 
-          {/* Palillos + Cambio de proteína */}
+          {/* Palillos + Cambio proteína */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="border rounded-lg p-3">
               <h4 className="font-semibold text-gray-900">Palillos</h4>
@@ -264,11 +285,7 @@ const PromotionDetailModal: React.FC<Props> = ({
                   onChange={(e) => setFromProtein((e.target.value || undefined) as Protein)}
                 >
                   <option value="">De…</option>
-                  {PROTEINS.map((p) => (
-                    <option key={p} value={p}>
-                      {p}
-                    </option>
-                  ))}
+                  {PROTEINS.map(p => <option key={p} value={p}>{p}</option>)}
                 </select>
                 <select
                   className="border rounded-lg px-2 py-2"
@@ -276,11 +293,7 @@ const PromotionDetailModal: React.FC<Props> = ({
                   onChange={(e) => setToProtein((e.target.value || undefined) as Protein)}
                 >
                   <option value="">A…</option>
-                  {PROTEINS.map((p) => (
-                    <option key={p} value={p}>
-                      {p}
-                    </option>
-                  ))}
+                  {PROTEINS.map(p => <option key={p} value={p}>{p}</option>)}
                 </select>
               </div>
               <div className="mt-2 text-sm text-gray-600">
@@ -289,11 +302,12 @@ const PromotionDetailModal: React.FC<Props> = ({
             </div>
           </div>
 
-          {/* Salsas compactas */}
+          {/* Salsas compactas (incluye dinámico) */}
           <div className="border rounded-lg p-3">
             <h4 className="font-semibold text-gray-900">Salsas</h4>
             <p className="text-xs text-gray-500">
-              Incluye 2 por ítem. Extra c/u: soya/jengibre/wasabi ${CLP(FEES.soyUnit)}.
+              Incluye: soya <b>{includedSoy}</b>, jengibre <b>{includedGinger}</b>, wasabi <b>{includedWasabi}</b>. 
+              Los contadores parten en 0.
             </p>
             <div className="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-2">
               <LabeledCounter label="Soya" value={soyQty} onChange={setSoyQty} dense />
@@ -346,7 +360,7 @@ const PromotionDetailModal: React.FC<Props> = ({
             />
           </div>
 
-          {/* RESUMEN más abajo */}
+          {/* RESUMEN */}
           <div className="border rounded-lg p-3">
             <h4 className="font-semibold text-gray-900 mb-2">Resumen</h4>
             <div className="text-sm text-gray-700 space-y-1">
@@ -384,7 +398,7 @@ const PromotionDetailModal: React.FC<Props> = ({
   );
 };
 
-/* ================== UI compacta ================== */
+/* =============== UI compacta =============== */
 const Counter: React.FC<{
   label?: string;
   value: number;
