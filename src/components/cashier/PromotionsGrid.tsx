@@ -22,7 +22,9 @@ interface AddToCartPayload {
 const PromotionsGrid: React.FC<{
   onAddToCart: (promotionId: number, basePrice?: number) => void;
   onAddToCartDetailed?: (payload: AddToCartPayload) => void;
-}> = ({ onAddToCart, onAddToCartDetailed }) => {
+  /** ✅ NUEVO: navegar a “Crear orden” justo después de confirmar en el modal */
+  onAfterConfirm?: () => void;
+}> = ({ onAddToCart, onAddToCartDetailed, onAfterConfirm }) => {
   const promotions = useMemo(() => [
     { id: 1001, name: "KOI 1 (35 Bocados fríos)", price: 21990, time: 18, desc: "Selección fría con salmón, camarón y kanikama", img: "🍣" },
     { id: 1002, name: "PROMOCIÓN 1 (36 Bocados mixtos)", price: 21990, time: 22, desc: "Mix frío + frito (panko)", img: "🥢" },
@@ -93,6 +95,7 @@ const PromotionsGrid: React.FC<{
           baseTime={sel.time}
           name={sel.name}
           onConfirm={(payload) => onAddToCartDetailed?.(payload)}
+          onAfterConfirm={onAfterConfirm} // ✅ para saltar a “Crear orden”
         />
       )}
     </div>

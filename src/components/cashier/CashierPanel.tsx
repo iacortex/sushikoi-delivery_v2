@@ -47,11 +47,13 @@ interface OrderMeta {
   service: ServiceType; deliveryZone?: string; deliveryFee?: number; chopsticks?: number;
   changes?: ChangeLine[]; soy?: SauceLine; ginger?: SauceLine; wasabi?: SauceLine;
   agridulce?: SauceLine; acevichada?: SauceLine; extrasTotal?: number;
+  note?: string; // ← nota agregada desde el modal
 }
 interface AddToCartPayload {
   promotionId: number; chopsticks: number; service: ServiceType;
   deliveryZone?: string; deliveryFee?: number; changes: ChangeLine[];
   soy?: SauceLine; ginger?: SauceLine; wasabi?: SauceLine; agridulce?: SauceLine; acevichada?: SauceLine;
+  note?: string; // ← nota que viene del modal
   extrasTotal: number; estimatedTotal: number;
 }
 
@@ -211,7 +213,8 @@ const CashierPanel: React.FC<Props> = ({ ordersApi, onOrderCreated }) => {
     const existing = cart.find((it) => it.id === promotionId);
     if (existing) setCart(cart.map((it) => it.id === promotionId ? { ...it, quantity: it.quantity + 1 } : it));
     else setCart(prev => [...prev, { id: promotionId, name, description, items: [], originalPrice: unitPrice, discountPrice: unitPrice, discount: 0, image: "🍣", popular: false, cookingTime: time, quantity: 1 }]);
-    notify("success","Producto agregado al carrito"); setActiveTab("customer");
+    notify("success","Producto agregado al carrito");
+    // 🔕 sin navegación aquí; el bounce lo hace onAfterConfirm
   };
 
   const addToCartDetailed = (p: AddToCartPayload) => {
@@ -240,6 +243,7 @@ const CashierPanel: React.FC<Props> = ({ ordersApi, onOrderCreated }) => {
         wasabi:    { qty: (prev?.wasabi?.qty || 0) + (p.wasabi?.qty || 0), included: (prev?.wasabi?.included || 0) + (p.wasabi?.included || 0), extraFee: (prev?.wasabi?.extraFee || 0) + (p.wasabi?.extraFee ?? p.wasabi?.feeTotal ?? 0) },
         agridulce: { qty: (prev?.agridulce?.qty || 0) + (p.agridulce?.qty || 0), feeTotal: (prev?.agridulce?.feeTotal || 0) + (p.agridulce?.feeTotal ?? p.agridulce?.extraFee ?? 0) },
         acevichada:{ qty: (prev?.acevichada?.qty || 0) + (p.acevichada?.qty || 0), feeTotal: (prev?.acevichada?.feeTotal || 0) + (p.acevichada?.feeTotal ?? p.acevichada?.extraFee ?? 0) },
+        note: p.note ?? prev?.note,
       };
       const changesFee = (next.changes || []).reduce((s, c) => s + (c.fee || 0), 0);
       const saucesFee  = (next.soy?.extraFee || 0) + (next.ginger?.extraFee || 0) + (next.wasabi?.extraFee || 0) + (next.agridulce?.feeTotal || 0) + (next.acevichada?.feeTotal || 0);
@@ -247,7 +251,8 @@ const CashierPanel: React.FC<Props> = ({ ordersApi, onOrderCreated }) => {
       return next;
     });
 
-    notify("success","Detalle agregado (delivery/cambios/salsas)"); setActiveTab("customer");
+    notify("success","Detalle agregado (delivery/cambios/salsas)");
+    // 🔕 sin navegación aquí; el bounce lo hace onAfterConfirm
   };
 
   const removeFromCart = (id: number) => { const it = cart.find(i => i.id === id); setCart(cart.filter(i => i.id !== id)); if (it) notify("info", `${it.name} eliminado del carrito`); };
@@ -281,6 +286,7 @@ const CashierPanel: React.FC<Props> = ({ ordersApi, onOrderCreated }) => {
         coordinates: coords as any,
         geocodePrecision: "approx" as any,
         routeMeta: null,
+        // Si tu API acepta meta, pásala aquí: meta: orderMeta,
       });
 
       // ✅ asegurar estado 'pending' por seguridad
@@ -321,6 +327,12 @@ const CashierPanel: React.FC<Props> = ({ ordersApi, onOrderCreated }) => {
     { key: "orders",     label: "Órdenes",     icon: Package },
   ];
 
+  /* ====== Bounce: después de confirmar, pasar por Carrito y caer en Crear Orden ====== */
+  const goToCreateOrder = () => {
+    setActiveTab("cart");
+    setTimeout(() => setActiveTab("customer"), 140); // salto suave
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
       {/* Toasts */}
@@ -338,7 +350,7 @@ const CashierPanel: React.FC<Props> = ({ ordersApi, onOrderCreated }) => {
                 <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
                   Panel de Cajero/Vendedor <span className="text-sm bg-green-100 text-green-700 px-2 py-1 rounded-full">En línea</span>
                 </h1>
-                <p className="text-gray-600">Flujo: Promociones → Cliente → Crear pedido</p>
+                <p className="text-gray-600">Flujo: Promociones → Carrito → Cliente (crear pedido)</p>
               </div>
             </div>
             <div className="text-right">
@@ -395,6 +407,7 @@ const CashierPanel: React.FC<Props> = ({ ordersApi, onOrderCreated }) => {
             <PromotionsGrid
               onAddToCart={addToCart}
               onAddToCartDetailed={addToCartDetailed}
+              onAfterConfirm={goToCreateOrder}   // ✅ bounce a Carrito → Cliente
             />
           )}
 
