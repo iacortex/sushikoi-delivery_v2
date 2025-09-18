@@ -17,6 +17,7 @@ interface AddToCartPayload {
   acevichada?: { qty: number; feeTotal?: number; extraFee?: number; included?: number };
   extrasTotal: number;
   estimatedTotal: number;
+  drinks?: { name: string; price: number; quantity: number }[];
 }
 
 const PromotionsGrid: React.FC<{

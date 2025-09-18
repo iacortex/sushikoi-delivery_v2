@@ -1,8 +1,20 @@
+// src/components/cashier/CashierPanel.tsx
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  ShoppingCart, User, Utensils, Package, DollarSign,
-  TrendingUp, BarChart3, Clock, Bell, CheckCircle,
-  XCircle, AlertCircle, Eye
+  ShoppingCart,
+  User,
+  Utensils,
+  Package,
+  DollarSign,
+  TrendingUp,
+  BarChart3,
+  Clock,
+  Bell,
+  CheckCircle,
+  XCircle,
+  AlertCircle,
+  Eye,
+  Truck,
 } from "lucide-react";
 
 import PromotionsGrid from "../cashier/PromotionsGrid";
@@ -18,79 +30,166 @@ const TOTEM_MODE = true;
 
 /* ===== Tipos UI ===== */
 export interface CartItem {
-  id: number; name: string; description: string; items: string[];
-  originalPrice: number; discountPrice: number; discount: number;
-  image: string; popular: boolean; cookingTime: number; quantity: number;
+  id: number;
+  name: string;
+  description: string;
+  items: string[];
+  originalPrice: number;
+  discountPrice: number;
+  discount: number;
+  image: string;
+  popular: boolean;
+  cookingTime: number;
+  quantity: number;
 }
 type CashierTab = "dashboard" | "promotions" | "customer" | "cart" | "orders";
 
 interface CustomerFormData {
-  name: string; phone: string; street: string; number: string;
-  sector: string; city: string; references: string;
-  paymentMethod: 'efectivo' | 'debito' | 'credito' | 'transferencia' | 'mp';
-  paymentStatus: string; dueMethod: string; mpChannel?: 'delivery' | 'local';
+  name: string;
+  phone: string;
+  street: string;
+  number: string;
+  sector: string;
+  city: string;
+  references: string;
+  paymentMethod: "efectivo" | "debito" | "credito" | "transferencia" | "mp";
+  paymentStatus: string;
+  dueMethod: string;
+  mpChannel?: "delivery" | "local";
 }
-interface FormErrors { [k: string]: string; }
+interface FormErrors {
+  [k: string]: string;
+}
 
 interface OrderUI {
-  id: number; publicCode: string; name: string; phone: string; address: string;
-  total: number; status: "pending"|"cooking"|"ready"|"delivered";
-  cart: CartItem[]; createdAt: number; estimatedTime: number; paymentMethod: string;
+  id: number;
+  publicCode: string;
+  name: string;
+  phone: string;
+  address: string;
+  total: number;
+  status: "pending" | "cooking" | "ready" | "delivered";
+  cart: CartItem[];
+  createdAt: number;
+  estimatedTime: number;
+  paymentMethod: string;
 }
 
 /* ===== Extras ===== */
 type ServiceType = "delivery" | "local";
 type Protein = "pollo" | "salmon" | "camaron" | "kanikama" | "loco" | "pulpo";
-interface ChangeLine { from?: Protein; to?: Protein; fee: number; }
-interface SauceLine { qty: number; included?: number; extraFee?: number; feeTotal?: number; }
+interface ChangeLine {
+  from?: Protein;
+  to?: Protein;
+  fee: number;
+}
+interface SauceLine {
+  qty: number;
+  included?: number;
+  extraFee?: number;
+  feeTotal?: number;
+}
 interface OrderMeta {
-  service: ServiceType; deliveryZone?: string; deliveryFee?: number; chopsticks?: number;
-  changes?: ChangeLine[]; soy?: SauceLine; ginger?: SauceLine; wasabi?: SauceLine;
-  agridulce?: SauceLine; acevichada?: SauceLine; extrasTotal?: number;
-  note?: string; // ← nota agregada desde el modal
+  service: ServiceType;
+  deliveryZone?: string;
+  deliveryFee?: number;
+  chopsticks?: number;
+  changes?: ChangeLine[];
+  soy?: SauceLine;
+  ginger?: SauceLine;
+  wasabi?: SauceLine;
+  agridulce?: SauceLine;
+  acevichada?: SauceLine;
+  extrasTotal?: number;
+  note?: string;
 }
 interface AddToCartPayload {
-  promotionId: number; chopsticks: number; service: ServiceType;
-  deliveryZone?: string; deliveryFee?: number; changes: ChangeLine[];
-  soy?: SauceLine; ginger?: SauceLine; wasabi?: SauceLine; agridulce?: SauceLine; acevichada?: SauceLine;
-  note?: string; // ← nota que viene del modal
-  extrasTotal: number; estimatedTotal: number;
+  promotionId: number;
+  chopsticks: number;
+  service: ServiceType;
+  deliveryZone?: string;
+  deliveryFee?: number;
+  changes: ChangeLine[];
+  soy?: SauceLine;
+  ginger?: SauceLine;
+  wasabi?: SauceLine;
+  agridulce?: SauceLine;
+  acevichada?: SauceLine;
+  note?: string;
+  extrasTotal: number;
+  estimatedTotal: number;
+  drinks?: { name: string; price: number; quantity: number }[];
 }
 
 /* ===== Helpers ===== */
 const formatCLP = (n: number) => new Intl.NumberFormat("es-CL").format(n);
-const timeAgo = (ts: number) => { const m = Math.floor((Date.now()-ts)/60000); if (m<1) return "Ahora"; if (m<60) return `${m}m`; return `${Math.floor(m/60)}h`; };
+const timeAgo = (ts: number) => {
+  const m = Math.floor((Date.now() - ts) / 60000);
+  if (m < 1) return "Ahora";
+  if (m < 60) return `${m}m`;
+  return `${Math.floor(m / 60)}h`;
+};
 const extrasFromMeta = (m?: OrderMeta) => {
   if (!m) return 0;
-  const delivery = m.service === "delivery" ? (m.deliveryFee ?? 0) : 0;
-  const changes  = (m.changes ?? []).reduce((s, c) => s + (c?.fee ?? 0), 0);
-  const sauces   = ((m.soy?.extraFee ?? m.soy?.feeTotal) ?? 0)
-                 + ((m.ginger?.extraFee ?? m.ginger?.feeTotal) ?? 0)
-                 + ((m.wasabi?.extraFee ?? m.wasabi?.feeTotal) ?? 0)
-                 + ((m.agridulce?.feeTotal ?? m.agridulce?.extraFee) ?? 0)
-                 + ((m.acevichada?.feeTotal ?? m.acevichada?.extraFee) ?? 0);
+  const delivery = m.service === "delivery" ? m.deliveryFee ?? 0 : 0;
+  const changes = (m.changes ?? []).reduce((s, c) => s + (c?.fee ?? 0), 0);
+  const sauces =
+    (m.soy?.extraFee ?? m.soy?.feeTotal ?? 0) +
+    (m.ginger?.extraFee ?? m.ginger?.feeTotal ?? 0) +
+    (m.wasabi?.extraFee ?? m.wasabi?.feeTotal ?? 0) +
+    (m.agridulce?.feeTotal ?? m.agridulce?.extraFee ?? 0) +
+    (m.acevichada?.feeTotal ?? m.acevichada?.extraFee ?? 0);
   return delivery + changes + sauces;
 };
 
 /* ===== Toast ===== */
-type NType = "success"|"warning"|"error"|"info";
-interface Notification { id: number; type: NType; message: string; timestamp: number; }
-const Toast: React.FC<{ n: Notification; onClose: (id: number) => void }> = ({ n, onClose }) => {
-  useEffect(() => { const t = setTimeout(() => onClose(n.id), 5000); return () => clearTimeout(t); }, [n.id, onClose]);
-  const Icon = () => n.type === "success" ? <CheckCircle className="text-green-600" size={18}/> :
-                   n.type === "warning" ? <AlertCircle className="text-yellow-600" size={18}/> :
-                   n.type === "error"   ? <XCircle className="text-red-600" size={18}/> :
-                                          <Bell className="text-blue-600" size={18}/>;
-  const bg = { success:"bg-green-50 border-green-200", warning:"bg-yellow-50 border-yellow-200", error:"bg-red-50 border-red-200", info:"bg-blue-50 border-blue-200" }[n.type];
+type NType = "success" | "warning" | "error" | "info";
+interface Notification {
+  id: number;
+  type: NType;
+  message: string;
+  timestamp: number;
+}
+const Toast: React.FC<{ n: Notification; onClose: (id: number) => void }> = ({
+  n,
+  onClose,
+}) => {
+  useEffect(() => {
+    const t = setTimeout(() => onClose(n.id), 5000);
+    return () => clearTimeout(t);
+  }, [n.id, onClose]);
+  const Icon = () =>
+    n.type === "success" ? (
+      <CheckCircle className="text-green-600" size={18} />
+    ) : n.type === "warning" ? (
+      <AlertCircle className="text-yellow-600" size={18} />
+    ) : n.type === "error" ? (
+      <XCircle className="text-red-600" size={18} />
+    ) : (
+      <Bell className="text-blue-600" size={18} />
+    );
+  const bg = {
+    success: "bg-green-50 border-green-200",
+    warning: "bg-yellow-50 border-yellow-200",
+    error: "bg-red-50 border-red-200",
+    info: "bg-blue-50 border-blue-200",
+  }[n.type];
   return (
-    <div className={`${bg} border rounded-lg p-3 shadow-md animate-slide-in-right`}>
+    <div
+      className={`${bg} border rounded-lg p-3 shadow-md animate-slide-in-right`}
+    >
       <div className="flex items-start gap-2">
         <Icon />
         <div className="flex-1">
           <p className="text-sm font-medium text-gray-900">{n.message}</p>
           <p className="text-xs text-gray-500">{timeAgo(n.timestamp)}</p>
         </div>
-        <button onClick={() => onClose(n.id)} className="text-gray-400 hover:text-gray-600"><XCircle size={14}/></button>
+        <button
+          onClick={() => onClose(n.id)}
+          className="text-gray-400 hover:text-gray-600"
+        >
+          <XCircle size={14} />
+        </button>
       </div>
     </div>
   );
@@ -104,93 +203,417 @@ function enforceOneProteinChange(
 ): ChangeLine[] {
   const list = incoming ?? [];
   if (list.length <= 1) return list;
-  const wantsMore = confirmFn("Ya tienes 1 cambio de proteína. ¿Quieres agregar otro cambio?");
-  if (wantsMore) { notify("info","Se agregaron cambios de proteína adicionales."); return list; }
-  notify("warning","Se aplicó solo 1 cambio de proteína."); return [list[0]];
+  const wantsMore = confirmFn(
+    "Ya tienes 1 cambio de proteína. ¿Quieres agregar otro cambio?"
+  );
+  if (wantsMore) {
+    notify("info", "Se agregaron cambios de proteína adicionales.");
+    return list;
+  }
+  notify("warning", "Se aplicó solo 1 cambio de proteína.");
+  return [list[0]];
 }
 
-/* ===== Modal detalle ===== */
-const OrderDetailModal: React.FC<{ open: boolean; onClose: () => void; order?: OrderUI; }> = ({ open, onClose, order }) => {
+/* =========================================================
+   MODAL DETALLE — Boleta + Stepper de estados + Barra tiempo
+   ========================================================= */
+const OrderDetailModal: React.FC<{
+  open: boolean;
+  onClose: () => void;
+  order?: OrderUI;
+}> = ({ open, onClose, order }) => {
   if (!order) return null;
+
+  const STAGES = [
+    { key: "pending", label: "Pendiente", icon: Clock },
+    { key: "cooking", label: "Cocina", icon: Utensils },
+    { key: "assembling", label: "Armando", icon: Package },
+    { key: "delivery", label: "Delivery", icon: Truck },
+    { key: "ready", label: "Listo", icon: CheckCircle },
+  ] as const;
+
+  const statusToStageIndex = (s?: string) => {
+    const map: Record<string, number> = {
+      pending: 0,
+      cocina: 1,
+      cooking: 1,
+      assembling: 2,
+      armado: 2,
+      delivery: 3,
+      entregando: 3,
+      ready: 4,
+      delivered: 4,
+      listo: 4,
+    };
+    return map[(s || "").toLowerCase()] ?? 0;
+  };
+
+  const [now, setNow] = React.useState(Date.now());
+  React.useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  const etaMs = Math.max(1, (order.estimatedTime || 15) * 60_000);
+  const elapsed = Math.max(0, now - (order.createdAt || now));
+  const percentByTime = Math.min(1, elapsed / etaMs);
+
+  const idxByStatus = statusToStageIndex(order.status);
+  const idxByTime = Math.min(4, Math.floor(percentByTime * STAGES.length));
+  const currentIdx = Math.max(idxByStatus, idxByTime);
+
+  const itemsSubtotal = order.cart.reduce(
+    (s, it) => s + it.discountPrice * it.quantity,
+    0
+  );
+  const extras = Math.max(0, (order.total ?? 0) - itemsSubtotal);
+  const fmt = (n: number) =>
+    new Intl.NumberFormat("es-CL", { maximumFractionDigits: 0 }).format(n);
+  const dt = new Date(order.createdAt || Date.now()).toLocaleString("es-CL", {
+    dateStyle: "short",
+    timeStyle: "short",
+  });
+
   return (
-    <KioskModal open={open} onClose={onClose} title={`Pedido #${order.publicCode} — ${order.name}`} subtitle={`${order.phone} • ${order.address}`} designWidth={1100} designHeight={700}>
-      <div className="grid grid-cols-12 gap-4">
-        <div className="col-span-12 md:col-span-5 space-y-3">
-          <div className="border rounded-lg p-3">
-            <h4 className="font-semibold text-gray-900 mb-1">Resumen</h4>
-            <div className="text-sm text-gray-700 space-y-1">
-              <div>Estado: <b className="uppercase">{order.status}</b></div>
-              <div>Creado: <span className="text-gray-600">{timeAgo(order.createdAt)}</span></div>
-              <div>ETA: <span className="text-gray-600">{order.estimatedTime} min</span></div>
-              <div>Método de pago: <span className="text-gray-600">{order.paymentMethod}</span></div>
-            </div>
-          </div>
-          <div className="border rounded-lg p-3"><h4 className="font-semibold text-gray-900 mb-1">Cliente</h4><div className="text-sm text-gray-700 space-y-1"><div><User className="inline mr-1" size={14}/> {order.name}</div><div>📞 {order.phone}</div><div>📍 {order.address}</div></div></div>
-          <div className="border rounded-lg p-3 bg-gray-50"><div className="text-sm text-gray-700">Total</div><div className="text-2xl font-bold text-rose-600">${formatCLP(order.total)}</div></div>
+    <KioskModal
+      open={open}
+      onClose={onClose}
+      title={`Pedido #${order.publicCode}`}
+      subtitle={`${order.name} • ${order.phone}`}
+      designWidth={420}
+      designHeight={780}
+    >
+      {/* Stepper + barra tiempo */}
+      <div className="mb-4">
+        <div className="flex items-center justify-between text-[11px] text-gray-600 mb-2">
+          {STAGES.map((st, i) => {
+            const active = i <= currentIdx;
+            const Icon = st.icon;
+            return (
+              <div key={st.key} className="flex-1 flex items-center">
+                <div className="flex flex-col items-center w-full">
+                  <div
+                    className={`w-6 h-6 rounded-full flex items-center justify-center text-white ${
+                      active ? "bg-rose-600" : "bg-gray-300"
+                    }`}
+                    title={st.label}
+                  >
+                    <Icon size={14} />
+                  </div>
+                  <span className={`mt-1 ${active ? "text-gray-900" : ""}`}>
+                    {st.label}
+                  </span>
+                </div>
+                {i < STAGES.length - 1 && (
+                  <div className="w-full h-1 mx-2 bg-gray-200 rounded">
+                    <div
+                      className={`h-1 rounded ${
+                        i < currentIdx ? "bg-rose-600" : "bg-gray-200"
+                      }`}
+                      style={{ width: "100%" }}
+                    />
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
-        <div className="col-span-12 md:col-span-7 space-y-3">
-          <h4 className="font-semibold text-gray-900">Items</h4>
+
+        <div className="w-full bg-gray-200 h-2 rounded">
+          <div
+            className="h-2 rounded bg-rose-600 transition-all duration-500"
+            style={{
+              width: `${Math.min(100, Math.max(0, percentByTime * 100))}%`,
+            }}
+          />
+        </div>
+        <div className="flex justify-between text-[11px] text-gray-500 mt-1">
+          <span>Inicio</span>
+          <span>
+            ETA: <b className="text-gray-700">{order.estimatedTime} min</b>
+          </span>
+        </div>
+      </div>
+
+      {/* Boleta 80mm */}
+      <div className="w-full flex justify-center">
+        <div className="bg-white shadow-sm rounded-xl border border-gray-200 p-4 font-mono text-sm text-gray-900 w-[360px] print:w-[80mm]">
+          <div className="text-center">
+            <div className="text-lg font-extrabold tracking-widest">
+              SUSHIKOI
+            </div>
+            <div className="text-xs text-gray-500">Puerto Montt</div>
+            <div className="text-xs text-gray-500">RUT: 76.123.456-K</div>
+          </div>
+
+          <div className="my-3 border-t border-dashed border-gray-300" />
+
+          <div className="grid grid-cols-2 gap-y-1 text-xs">
+            <div className="text-gray-600">Boleta</div>
+            <div className="text-right font-semibold">
+              #{order.publicCode || order.id}
+            </div>
+            <div className="text-gray-600">Fecha</div>
+            <div className="text-right">{dt}</div>
+            <div className="text-gray-600">Estado</div>
+            <div className="text-right uppercase">
+              {STAGES[currentIdx]?.label || order.status}
+            </div>
+            <div className="text-gray-600">Pago</div>
+            <div className="text-right">{order.paymentMethod || "—"}</div>
+            <div className="text-gray-600">Cliente</div>
+            <div className="text-right truncate">{order.name}</div>
+            <div className="text-gray-600">Dirección</div>
+            <div className="text-right truncate">{order.address}</div>
+          </div>
+
+          <div className="my-3 border-t border-dashed border-gray-300" />
+
+          <div className="mb-1 font-semibold">Ítems</div>
           <div className="space-y-2">
             {order.cart.map((it) => (
-              <div key={it.id} className="border rounded-lg p-3 flex items-start gap-3">
-                <div className="text-2xl">{it.image || "🍣"}</div>
-                <div className="flex-1">
-                  <div className="flex items-center justify-between">
-                    <div className="font-semibold text-gray-900">{it.name}</div>
-                    <div className="text-sm text-gray-600">x{it.quantity}</div>
+              <div key={it.id} className="leading-5">
+                <div className="flex items-start justify-between">
+                  <div className="pr-2">
+                    <div className="flex items-center gap-2">
+                      <span className="truncate max-w-[210px]">
+                        {it.name}
+                        {it.items?.length
+                          ? ` — ${it.items.slice(0, 2).join(", ")}${
+                              it.items.length > 2 ? "…" : ""
+                            }`
+                          : ""}
+                      </span>
+                      <span className="text-gray-500">x{it.quantity}</span>
+                    </div>
                   </div>
-                  {!!it.items?.length && <ul className="mt-1 text-xs text-gray-600 list-disc ml-4">{it.items.map((ln, idx) => <li key={idx}>{ln}</li>)}</ul>}
+                  <div className="tabular-nums">
+                    ${fmt(it.discountPrice * it.quantity)}
+                  </div>
                 </div>
-                <div className="text-right">
-                  <div className="font-semibold">${formatCLP(it.discountPrice * it.quantity)}</div>
-                  {it.discount > 0 && <div className="text-xs text-gray-500 line-through">${formatCLP(it.originalPrice * it.quantity)}</div>}
-                </div>
+                {!!it.discount && it.discount > 0 && (
+                  <div className="text-[11px] text-gray-500 flex justify-between">
+                    <span>Precio lista</span>
+                    <span className="line-through">
+                      ${fmt(it.originalPrice * it.quantity)}
+                    </span>
+                  </div>
+                )}
               </div>
             ))}
           </div>
-          <div className="mt-2 text-sm text-gray-600 bg-gray-50 border rounded-lg p-3">
-            <Clock className="inline mr-1 text-orange-500" size={16}/> Tiempo estimado: <b>{order.estimatedTime} min</b>
+
+          <div className="my-3 border-t border-dashed border-gray-300" />
+
+          <div className="space-y-1 text-[13px]">
+            <div className="flex justify-between">
+              <span className="text-gray-600">Subtotal</span>
+              <span className="tabular-nums">${fmt(itemsSubtotal)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-600">Extras/Delivery</span>
+              <span className="tabular-nums">${fmt(extras)}</span>
+            </div>
+            <div className="flex justify-between text-base font-extrabold mt-2">
+              <span>Total</span>
+              <span className="tabular-nums text-rose-600">
+                ${fmt(order.total)}
+              </span>
+            </div>
+          </div>
+
+          <div className="my-3 border-t border-dashed border-gray-300" />
+
+          <div className="text-xs text-gray-600 flex items-center justify-between">
+            <div>
+              ETA restante:{" "}
+              <b className="text-gray-800">
+                {Math.max(
+                  0,
+                  Math.ceil((1 - percentByTime) * (order.estimatedTime || 15))
+                )}{" "}
+                min
+              </b>
+            </div>
+            <div className="text-right">Método: {order.paymentMethod}</div>
+          </div>
+
+          <div className="mt-4 flex flex-col items-center">
+            <div className="w-40 h-10 bg-[repeating-linear-gradient(90deg,#111_0_3px,#fff_3px_6px)] rounded-sm" />
+            <div className="text-[11px] text-gray-500 mt-1 tracking-widest">
+              #{order.publicCode || order.id}
+            </div>
+          </div>
+
+          <div className="mt-4 text-center text-[11px] text-gray-500">
+            ¡Gracias por tu compra!
           </div>
         </div>
       </div>
+
+      <div className="mt-4 flex justify-end gap-2 print:hidden">
+        <button
+          onClick={() => window.print()}
+          className="px-3 py-2 text-sm border rounded-lg hover:bg-gray-50"
+        >
+          Imprimir
+        </button>
+        <button
+          onClick={onClose}
+          className="px-3 py-2 text-sm bg-rose-600 text-white rounded-lg hover:bg-rose-700"
+        >
+          Cerrar
+        </button>
+      </div>
     </KioskModal>
+  );
+};
+
+/* ===== Panel: Clientes existentes (buscador + lista) ===== */
+type SimpleCustomer = {
+  name: string;
+  phone: string;
+  street: string;
+  number: string;
+  sector?: string;
+  city?: string;
+  references?: string;
+  address?: string;
+  lastAt?: number;
+};
+
+const ExistingCustomersPanel: React.FC<{
+  customers: SimpleCustomer[];
+  onUseCustomer: (c: SimpleCustomer) => void;
+}> = ({ customers, onUseCustomer }) => {
+  const [q, setQ] = React.useState("");
+
+  const filtered = React.useMemo(() => {
+    const k = q.trim().toLowerCase();
+    if (!k) return customers;
+    return customers.filter((c) =>
+      [c.name, c.phone, c.street, c.number, c.city, c.sector, c.address]
+        .filter(Boolean)
+        .some((v) => String(v).toLowerCase().includes(k))
+    );
+  }, [q, customers]);
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200">
+      <div className="p-4 border-b">
+        <h3 className="text-lg font-semibold">Clientes registrados</h3>
+        <p className="text-sm text-gray-500">
+          Busca por nombre, teléfono o dirección.
+        </p>
+        <div className="mt-3">
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Buscar por nombre, teléfono o dirección…"
+            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-rose-500"
+          />
+        </div>
+      </div>
+
+      {filtered.length === 0 ? (
+        <div className="p-10 text-center text-gray-500">
+          Sin resultados. Prueba con otro término.
+        </div>
+      ) : (
+        <ul className="divide-y">
+          {filtered.map((c, i) => (
+            <li key={i} className="p-4 flex items-center justify-between gap-4">
+              <div className="min-w-0">
+                <p className="font-medium text-gray-900 truncate">{c.name}</p>
+                <p className="text-sm text-gray-600 truncate">{c.phone}</p>
+                <p className="text-sm text-gray-500 truncate">
+                  {c.address ||
+                    `${c.street || ""} ${c.number || ""}${
+                      c.sector ? `, ${c.sector}` : ""
+                    }${c.city ? `, ${c.city}` : ""}`}
+                </p>
+                {!!c.lastAt && (
+                  <p className="text-xs text-gray-400">
+                    Último pedido: {new Date(c.lastAt).toLocaleString("es-CL")}
+                  </p>
+                )}
+              </div>
+              <button
+                onClick={() => onUseCustomer(c)}
+                className="shrink-0 px-3 py-2 text-sm bg-rose-600 text-white rounded-lg hover:bg-rose-700"
+              >
+                Usar cliente
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 };
 
 /* ===================== Componente Principal ===================== */
 type Props = {
   ordersApi: OrdersApi;
-  onOrderCreated?: () => void; // 👈 callback al crear orden
+  onOrderCreated?: () => void; // no lo usamos para no saltar a cocina
 };
 
-const CashierPanel: React.FC<Props> = ({ ordersApi, onOrderCreated }) => {
-  const [activeTab, setActiveTab] = useState<CashierTab>(TOTEM_MODE ? "promotions" : "dashboard");
+const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
+  const [activeTab, setActiveTab] = useState<CashierTab>(
+    TOTEM_MODE ? "promotions" : "dashboard"
+  );
 
   // Carrito
   const [cart, setCart] = useState<CartItem[]>([]);
-  const [selectedOrder, setSelectedOrder] = useState<OrderUI | undefined>(undefined);
+  const [selectedOrder, setSelectedOrder] = useState<OrderUI | undefined>(
+    undefined
+  );
   const [showDetail, setShowDetail] = useState(false);
 
-  // Clientes demo
+  // Órdenes recién creadas (buffer local)
+  const [recentOrders, setRecentOrders] = useState<OrderUI[]>([]);
+
+  // Fallback demo para formulario (solo si no hay clientes reales)
   const [customers, setCustomers] = useState<any[]>([]);
   useEffect(() => {
-    const rand = (a: number, b: number) => Math.floor(Math.random() * (b - a + 1)) + a;
+    const rand = (a: number, b: number) =>
+      Math.floor(Math.random() * (b - a + 1)) + a;
     const pick = <T,>(arr: T[]) => arr[Math.floor(Math.random() * arr.length)];
-    const first = ["Juan","María","Camila","Javier","Daniela","Felipe","Francisca","Rodrigo","Paula","Ignacio","Valentina","Sebastián","Carolina","Diego","Constanza","Matías","Fernanda","Benjamín","Antonia","Tomás","Isidora","Vicente","Sofía","Gonzalo","Trinidad","Martina","Cristóbal","Joaquín","Josefa","Pedro","Pablo","Andrea","Katherine","Bárbara","Nicole","Álvaro","Verónica","Laura","Rocío","Patricio","Eduardo","Lorena","Marcos","Cecilia","Claudia","Renata","Martín","Agustín","Lucas","Mateo","Emilia","Emma","Amanda","Catalina","Ignacia","Gabriel","Florencia","Josefina","Bruno","Matilde","Julieta","Paz","Alexa","Franco","Gael","Thiago"];
-    const last  = ["Pérez","García","Soto","Fuentes","Rojas","Castro","Paredes","Morales","Díaz","Torres","Aguilar","Muñoz","Reyes","Herrera","Vargas","Silva","Navarro","Vega","Flores","Contreras","Araya","Oyarzo","Trujillo","Alvarado","Salinas","Medina","Campos","Almonacid","Lagos","Méndez","Vidal","Bahamonde","Leiva","González"];
-    const streets = ["Av. Capitán Ávalos","Los Aromos","Av. Angelmó","Volcán Osorno","Egaña","Av. La Cruz","Las Encinas","Camino La Vara","Lago Llanquihue","Puerto Sur","Cardonal","Av. Austral","Urmeneta","Av. Seminario","Los Notros","Altamira","Miraflores","Valle Volcanes","Alerce Norte","Alerce Sur","Mirasol","Chinquihue","Reloncaví","Presidente Ibáñez","Las Quemas","Coihuin"];
-    const sectors = ["Mirasol","Cardonal","Alerce Norte","Alerce Sur","Puerto Sur","Centro","Chinquihue","Mirasol Alto","Valle Volcanes","Mirasol Bajo"];
-    const cities  = ["Puerto Montt","Puerto Varas","Osorno","Castro"];
-    const mkPhone = (i: number) => `+56 9 9${(9000 + (i % 9000)).toString().padStart(4,"0")} ${(1000 + (i*7)%9000).toString().padStart(4,"0")}`;
-    const mkCustomer = (i: number) => ({ name: `${pick(first)} ${pick(last)}`, phone: mkPhone(i), street: pick(streets), number: String(rand(1,2500)), sector: Math.random()<.7?pick(sectors):"", city: pick(cities), references: "" });
-    setCustomers(Array.from({ length: 60 }, (_, i) => mkCustomer(i + 1)));
+    const first = ["Juan", "María", "Camila", "Javier", "Daniela", "Felipe"];
+    const last = ["Pérez", "García", "Soto", "Fuentes", "Rojas", "Castro"];
+    const streets = ["Av. Capitán Ávalos", "Los Aromos", "Av. Angelmó"];
+    const sectors = ["Mirasol", "Cardonal", "Centro"];
+    const cities = ["Puerto Montt", "Puerto Varas", "Osorno"];
+    const mkPhone = (i: number) =>
+      `+56 9 9${(9000 + (i % 9000)).toString().padStart(4, "0")} ${(
+        1000 +
+        ((i * 7) % 9000)
+      )
+        .toString()
+        .padStart(4, "0")}`;
+    const mkCustomer = (i: number) => ({
+      name: `${pick(first)} ${pick(last)}`,
+      phone: mkPhone(i),
+      street: pick(streets),
+      number: String(rand(1, 2500)),
+      sector: Math.random() < 0.7 ? pick(sectors) : "",
+      city: pick(cities),
+      references: "",
+    });
+    setCustomers(Array.from({ length: 20 }, (_, i) => mkCustomer(i + 1)));
   }, []);
 
   // Cliente + errores + extras
   const [customerData, setCustomerData] = useState<CustomerFormData>({
-    name: "", phone: "", street: "", number: "",
-    sector: "", city: "Puerto Montt", references: "",
-    paymentMethod: "debito", paymentStatus: "paid", dueMethod: "efectivo",
+    name: "",
+    phone: "",
+    street: "",
+    number: "",
+    sector: "",
+    city: "Puerto Montt",
+    references: "",
+    paymentMethod: "debito",
+    paymentStatus: "paid",
+    dueMethod: "efectivo",
   });
   const [errors, setErrors] = useState<FormErrors>({});
   const [isCreatingOrder, setIsCreatingOrder] = useState(false);
@@ -198,10 +621,20 @@ const CashierPanel: React.FC<Props> = ({ ordersApi, onOrderCreated }) => {
 
   // reloj UI y toasts
   const [now, setNow] = useState(new Date());
-  useEffect(() => { const t = setInterval(() => setNow(new Date()), 60000); return () => clearInterval(t); }, []);
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 60000);
+    return () => clearInterval(t);
+  }, []);
   const [notifs, setNotifs] = useState<Notification[]>([]);
-  const notify = (t: NType, m: string) => setNotifs(p => [{ id: Date.now(), type: t, message: m, timestamp: Date.now() }, ...p].slice(0,5));
-  const dismiss = (id: number) => setNotifs(p => p.filter(n => n.id !== id));
+  const notify = (t: NType, m: string) =>
+    setNotifs((p) =>
+      [
+        { id: Date.now(), type: t, message: m, timestamp: Date.now() },
+        ...p,
+      ].slice(0, 5)
+    );
+  const dismiss = (id: number) =>
+    setNotifs((p) => p.filter((n) => n.id !== id));
 
   /* ====== Carrito ====== */
   const addToCart = (promotionId: number, hintedBasePrice?: number) => {
@@ -211,10 +644,30 @@ const CashierPanel: React.FC<Props> = ({ ordersApi, onOrderCreated }) => {
     const time = item?.time ?? 15;
     const description = item?.desc ?? "Item agregado desde Promociones";
     const existing = cart.find((it) => it.id === promotionId);
-    if (existing) setCart(cart.map((it) => it.id === promotionId ? { ...it, quantity: it.quantity + 1 } : it));
-    else setCart(prev => [...prev, { id: promotionId, name, description, items: [], originalPrice: unitPrice, discountPrice: unitPrice, discount: 0, image: "🍣", popular: false, cookingTime: time, quantity: 1 }]);
-    notify("success","Producto agregado al carrito");
-    // 🔕 sin navegación aquí; el bounce lo hace onAfterConfirm
+    if (existing)
+      setCart(
+        cart.map((it) =>
+          it.id === promotionId ? { ...it, quantity: it.quantity + 1 } : it
+        )
+      );
+    else
+      setCart((prev) => [
+        ...prev,
+        {
+          id: promotionId,
+          name,
+          description,
+          items: [],
+          originalPrice: unitPrice,
+          discountPrice: unitPrice,
+          discount: 0,
+          image: "🍣",
+          popular: false,
+          cookingTime: time,
+          quantity: 1,
+        },
+      ]);
+    notify("success", "Producto agregado al carrito");
   };
 
   const addToCartDetailed = (p: AddToCartPayload) => {
@@ -226,42 +679,145 @@ const CashierPanel: React.FC<Props> = ({ ordersApi, onOrderCreated }) => {
     const description = item?.desc ?? "Item agregado desde Promociones";
 
     const existing = cart.find((it) => it.id === p.promotionId);
-    if (existing) setCart(cart.map((it) => it.id === p.promotionId ? { ...it, quantity: it.quantity + 1 } : it));
-    else setCart(prev => [...prev, { id: p.promotionId, name, description, items: [], originalPrice: unitPrice, discountPrice: unitPrice, discount: 0, image: "🍣", popular: false, cookingTime: time, quantity: 1 }]);
+    if (existing)
+      setCart(
+        cart.map((it) =>
+          it.id === p.promotionId ? { ...it, quantity: it.quantity + 1 } : it
+        )
+      );
+    else
+      setCart((prev) => [
+        ...prev,
+        {
+          id: p.promotionId,
+          name,
+          description,
+          items: [],
+          originalPrice: unitPrice,
+          discountPrice: unitPrice,
+          discount: 0,
+          image: "🍣",
+          popular: false,
+          cookingTime: time,
+          quantity: 1,
+        },
+      ]);
 
     const guarded = enforceOneProteinChange(p.changes, window.confirm, notify);
-    setOrderMeta(prev => {
+    setOrderMeta((prev) => {
       const nextService = p.service || prev?.service || "local";
       const next: OrderMeta = {
         service: nextService,
-        deliveryZone: nextService === "delivery" ? (p.deliveryZone ?? prev?.deliveryZone) : undefined,
-        deliveryFee: nextService === "delivery" ? (p.deliveryFee ?? prev?.deliveryFee ?? 0) : 0,
+        deliveryZone:
+          nextService === "delivery"
+            ? p.deliveryZone ?? prev?.deliveryZone
+            : undefined,
+        deliveryFee:
+          nextService === "delivery"
+            ? p.deliveryFee ?? prev?.deliveryFee ?? 0
+            : 0,
         chopsticks: (prev?.chopsticks || 0) + (p.chopsticks || 0),
         changes: [...(prev?.changes || []), ...guarded],
-        soy:       { qty: (prev?.soy?.qty || 0) + (p.soy?.qty || 0),       included: (prev?.soy?.included || 0) + (p.soy?.included || 0),       extraFee: (prev?.soy?.extraFee || 0) + (p.soy?.extraFee ?? p.soy?.feeTotal ?? 0) },
-        ginger:    { qty: (prev?.ginger?.qty || 0) + (p.ginger?.qty || 0), included: (prev?.ginger?.included || 0) + (p.ginger?.included || 0), extraFee: (prev?.ginger?.extraFee || 0) + (p.ginger?.extraFee ?? p.ginger?.feeTotal ?? 0) },
-        wasabi:    { qty: (prev?.wasabi?.qty || 0) + (p.wasabi?.qty || 0), included: (prev?.wasabi?.included || 0) + (p.wasabi?.included || 0), extraFee: (prev?.wasabi?.extraFee || 0) + (p.wasabi?.extraFee ?? p.wasabi?.feeTotal ?? 0) },
-        agridulce: { qty: (prev?.agridulce?.qty || 0) + (p.agridulce?.qty || 0), feeTotal: (prev?.agridulce?.feeTotal || 0) + (p.agridulce?.feeTotal ?? p.agridulce?.extraFee ?? 0) },
-        acevichada:{ qty: (prev?.acevichada?.qty || 0) + (p.acevichada?.qty || 0), feeTotal: (prev?.acevichada?.feeTotal || 0) + (p.acevichada?.feeTotal ?? p.acevichada?.extraFee ?? 0) },
+        soy: {
+          qty: (prev?.soy?.qty || 0) + (p.soy?.qty || 0),
+          included: (prev?.soy?.included || 0) + (p.soy?.included || 0),
+          extraFee:
+            (prev?.soy?.extraFee || 0) +
+            (p.soy?.extraFee ?? p.soy?.feeTotal ?? 0),
+        },
+        ginger: {
+          qty: (prev?.ginger?.qty || 0) + (p.ginger?.qty || 0),
+          included: (prev?.ginger?.included || 0) + (p.ginger?.included || 0),
+          extraFee:
+            (prev?.ginger?.extraFee || 0) +
+            (p.ginger?.extraFee ?? p.ginger?.feeTotal ?? 0),
+        },
+        wasabi: {
+          qty: (prev?.wasabi?.qty || 0) + (p.wasabi?.qty || 0),
+          included: (prev?.wasabi?.included || 0) + (p.wasabi?.included || 0),
+          extraFee:
+            (prev?.wasabi?.extraFee || 0) +
+            (p.wasabi?.extraFee ?? p.wasabi?.feeTotal ?? 0),
+        },
+        agridulce: {
+          qty: (prev?.agridulce?.qty || 0) + (p.agridulce?.qty || 0),
+          feeTotal:
+            (prev?.agridulce?.feeTotal || 0) +
+            (p.agridulce?.feeTotal ?? p.agridulce?.extraFee ?? 0),
+        },
+        acevichada: {
+          qty: (prev?.acevichada?.qty || 0) + (p.acevichada?.qty || 0),
+          feeTotal:
+            (prev?.acevichada?.feeTotal || 0) +
+            (p.acevichada?.feeTotal ?? p.acevichada?.extraFee ?? 0),
+        },
         note: p.note ?? prev?.note,
       };
-      const changesFee = (next.changes || []).reduce((s, c) => s + (c.fee || 0), 0);
-      const saucesFee  = (next.soy?.extraFee || 0) + (next.ginger?.extraFee || 0) + (next.wasabi?.extraFee || 0) + (next.agridulce?.feeTotal || 0) + (next.acevichada?.feeTotal || 0);
+      const changesFee = (next.changes || []).reduce(
+        (s, c) => s + (c.fee || 0),
+        0
+      );
+      const saucesFee =
+        (next.soy?.extraFee || 0) +
+        (next.ginger?.extraFee || 0) +
+        (next.wasabi?.extraFee || 0) +
+        (next.agridulce?.feeTotal || 0) +
+        (next.acevichada?.feeTotal || 0);
       next.extrasTotal = (next.deliveryFee || 0) + changesFee + saucesFee;
       return next;
     });
 
-    notify("success","Detalle agregado (delivery/cambios/salsas)");
-    // 🔕 sin navegación aquí; el bounce lo hace onAfterConfirm
+    if (Array.isArray(p.drinks)) {
+      p.drinks.forEach((d, idx) => {
+        if (!d || !d.quantity) return;
+        const id = Date.now() + idx;
+        const item = {
+          id,
+          name: d.name,
+          description: "Bebida",
+          items: [],
+          originalPrice: d.price,
+          discountPrice: d.price,
+          discount: 0,
+          image: "🥤",
+          popular: false,
+          cookingTime: 0,
+          quantity: d.quantity,
+        } as CartItem;
+        setCart((prev) => [...prev, item]);
+      });
+    }
+
+    notify("success", "Detalle agregado (delivery/cambios/salsas)");
   };
 
-  const removeFromCart = (id: number) => { const it = cart.find(i => i.id === id); setCart(cart.filter(i => i.id !== id)); if (it) notify("info", `${it.name} eliminado del carrito`); };
-  const updateQuantity = (id: number, q: number) => { if (q <= 0) return removeFromCart(id); setCart(cart.map(i => i.id === id ? { ...i, quantity: q } : i)); };
-  const clearCart = () => { setCart([]); setOrderMeta(undefined); notify("info","Carrito vaciado"); };
+  const removeFromCart = (id: number) => {
+    const it = cart.find((i) => i.id === id);
+    setCart(cart.filter((i) => i.id !== id));
+    if (it) notify("info", `${it.name} eliminado del carrito`);
+  };
+  const updateQuantity = (id: number, q: number) => {
+    if (q <= 0) return removeFromCart(id);
+    setCart(cart.map((i) => (i.id === id ? { ...i, quantity: q } : i)));
+  };
+  const clearCart = () => {
+    setCart([]);
+    setOrderMeta(undefined);
+    notify("info", "Carrito vaciado");
+  };
 
-  const cartTotal = useMemo(() => cart.reduce((s, i) => s + i.discountPrice * i.quantity, 0), [cart]);
-  const cartCount = useMemo(() => cart.reduce((s, i) => s + i.quantity, 0), [cart]);
-  const estimatedCooking = useMemo(() => cart.reduce((m, i) => Math.max(m, i.cookingTime), 0), [cart]);
+  const cartTotal = useMemo(
+    () => cart.reduce((s, i) => s + i.discountPrice * i.quantity, 0),
+    [cart]
+  );
+  const cartCount = useMemo(
+    () => cart.reduce((s, i) => s + i.quantity, 0),
+    [cart]
+  );
+  const estimatedCooking = useMemo(
+    () => cart.reduce((m, i) => Math.max(m, i.cookingTime), 0),
+    [cart]
+  );
 
   const validate = (): boolean => {
     const e: FormErrors = {};
@@ -269,14 +825,120 @@ const CashierPanel: React.FC<Props> = ({ ordersApi, onOrderCreated }) => {
     if (!customerData.phone.trim()) e.phone = "El teléfono es obligatorio";
     if (!customerData.street.trim()) e.street = "La calle es obligatoria";
     if (!customerData.number.trim()) e.number = "El número es obligatorio";
-    if (cart.length === 0) e.cart = "Debe agregar al menos una promoción al carrito";
-    setErrors(e); return Object.keys(e).length === 0;
+    if (cart.length === 0)
+      e.cart = "Debe agregar al menos una promoción al carrito";
+    setErrors(e);
+    return Object.keys(e).length === 0;
   };
 
-  const grandTotal = useMemo(() => cartTotal + extrasFromMeta(orderMeta), [cartTotal, orderMeta]);
+  const grandTotal = useMemo(
+    () => cartTotal + extrasFromMeta(orderMeta),
+    [cartTotal, orderMeta]
+  );
+
+  // ===== Sincronizador tolerante =====
+  const syncOrders = async (api: unknown) => {
+    const a = api as any;
+    try {
+      if (typeof a?.fetchOrders === "function") return await a.fetchOrders();
+      if (typeof a?.refetch === "function") return await a.refetch();
+      if (typeof a?.refresh === "function") return await a.refresh();
+    } catch {
+      /* noop */
+    }
+  };
+
+  // ==== Traer clientes reales si el hook lo soporta ====
+  useEffect(() => {
+    const anyApi = ordersApi as any;
+    if (typeof anyApi?.fetchCustomers === "function") {
+      anyApi.fetchCustomers().catch(() => {});
+    }
+  }, [ordersApi]);
+
+  // ==== Construir lista de clientes existentes ====
+  type CustomerEntity = {
+    name?: string;
+    phone?: string;
+    street?: string;
+    number?: string;
+    sector?: string;
+    city?: string;
+    references?: string;
+    address?: string;
+    createdAt?: number;
+  };
+
+  const existingCustomers: SimpleCustomer[] = useMemo(() => {
+    const anyApi = ordersApi as any;
+
+    // 1) usar customers del store si existen
+    const customersArr: CustomerEntity[] = Array.isArray(anyApi?.customers)
+      ? anyApi.customers
+      : [];
+
+    const fromCustomers = customersArr.map((c) => ({
+      name: c.name || "",
+      phone: c.phone || "",
+      street: c.street || "",
+      number: c.number || "",
+      sector: c.sector || "",
+      city: c.city || "",
+      references: c.references || "",
+      address:
+        c.address ||
+        [c.street, c.number, c.sector, c.city].filter(Boolean).join(", "),
+      lastAt: c.createdAt || 0,
+    }));
+
+    // 2) fallback: derivar desde órdenes
+    const fromOrders = (() => {
+      const map = new Map<string, SimpleCustomer>();
+      for (const o of (ordersApi.orders as any[]) || []) {
+        const phone = (o?.phone || "").trim();
+        if (!phone) continue;
+        const addr: string = o?.address || "";
+        const parts = addr.split(",").map((s: string) => s.trim());
+        const street = o?.street || parts[0] || "";
+        const city = o?.city || parts.slice(-1)[0] || "";
+        const number = o?.number || "";
+        const sector = o?.sector || "";
+        const sc: SimpleCustomer = {
+          name: o?.name || "",
+          phone,
+          street,
+          number,
+          sector,
+          city,
+          references: o?.references || "",
+          address: addr || [street, number, sector, city].filter(Boolean).join(", "),
+          lastAt: o?.createdAt || 0,
+        };
+        const prev = map.get(phone);
+        if (!prev || (sc.lastAt || 0) > (prev.lastAt || 0)) map.set(phone, sc);
+      }
+      return Array.from(map.values());
+    })();
+
+    const base = fromCustomers.length ? fromCustomers : fromOrders;
+    return base.sort((a, b) => (b.lastAt || 0) - (a.lastAt || 0));
+  }, [ordersApi.orders, (ordersApi as any).customers]);
+
+  // Lista a mostrar: recientes + store (únicos)
+  const displayedOrders = useMemo(() => {
+    const map = new Map<number, OrderUI>();
+    for (const o of recentOrders) map.set(o.id, o);
+    for (const o of (ordersApi.orders as unknown as OrderUI[]))
+      if (!map.has(o.id)) map.set(o.id, o);
+    return Array.from(map.values());
+  }, [recentOrders, ordersApi.orders]);
 
   const createOrder = async () => {
-    if (!validate()) { notify("error","Complete todos los campos requeridos"); return; }
+    if (!validate()) {
+      notify("error", "Complete todos los campos requeridos");
+      setActiveTab("customer");
+      return;
+    }
     setIsCreatingOrder(true);
     try {
       const coords = { lat: -41.4717, lng: -72.9411 };
@@ -286,25 +948,41 @@ const CashierPanel: React.FC<Props> = ({ ordersApi, onOrderCreated }) => {
         coordinates: coords as any,
         geocodePrecision: "approx" as any,
         routeMeta: null,
-        // Si tu API acepta meta, pásala aquí: meta: orderMeta,
       });
 
-      // ✅ asegurar estado 'pending' por seguridad
+      if (!created || !created.id) {
+        notify("error", "No se pudo crear el pedido (respuesta inválida)");
+        return;
+      }
+
       ordersApi.updateOrderStatus?.(created.id, "pending");
 
-      // ✅ avisar al padre (App) para saltar a Cocina
-      onOrderCreated?.();
+      setRecentOrders((prev) => [created as unknown as OrderUI, ...prev]);
+      await syncOrders(ordersApi);
 
       setSelectedOrder(created as unknown as OrderUI);
       setShowDetail(true);
 
-      setCart([]); setOrderMeta(undefined);
-      setCustomerData({ name: "", phone: "", street: "", number: "", sector: "", city: "Puerto Montt", references: "", paymentMethod: "debito", paymentStatus: "paid", dueMethod: "efectivo" });
-      setErrors({}); setActiveTab("orders");
-
+      setCart([]);
+      setOrderMeta(undefined);
+      setCustomerData({
+        name: "",
+        phone: "",
+        street: "",
+        number: "",
+        sector: "",
+        city: "Puerto Montt",
+        references: "",
+        paymentMethod: "debito",
+        paymentStatus: "paid",
+        dueMethod: "efectivo",
+      });
+      setErrors({});
+      setActiveTab("orders");
       notify("success", `Pedido #${created.publicCode} creado`);
-    } catch {
-      notify("error","Error al crear pedido");
+    } catch (err) {
+      console.error("createOrder error:", err);
+      notify("error", "Error al crear pedido");
     } finally {
       setIsCreatingOrder(false);
     }
@@ -313,31 +991,45 @@ const CashierPanel: React.FC<Props> = ({ ordersApi, onOrderCreated }) => {
   /* ====== Métricas del store ====== */
   const todayOrders = ordersApi.orders.length;
   const todayRevenue = ordersApi.orders.reduce((s, o) => s + o.total, 0);
-  const avgOrderValue = todayOrders ? Math.round(todayRevenue / todayOrders) : 0;
-  const pending = ordersApi.orders.filter(o => o.status === "pending").length;
-  const cooking = ordersApi.orders.filter(o => o.status === "cooking").length;
-  const ready   = ordersApi.orders.filter(o => o.status === "ready").length;
+  const avgOrderValue = todayOrders
+    ? Math.round(todayRevenue / todayOrders)
+    : 0;
+  const pending = ordersApi.orders.filter((o) => o.status === "pending").length;
+  const cooking = ordersApi.orders.filter((o) => o.status === "cooking").length;
+  const ready = ordersApi.orders.filter((o) => o.status === "ready").length;
 
   type TabItem = { key: CashierTab; label: string; icon: any; badge?: number };
   const tabs: TabItem[] = [
-    { key: "dashboard",  label: "Dashboard",   icon: BarChart3 },
+    { key: "dashboard", label: "Dashboard", icon: BarChart3 },
     { key: "promotions", label: "Promociones", icon: Utensils },
-    { key: "customer",   label: "Cliente",     icon: User },
-    { key: "cart",       label: "Carrito",     icon: ShoppingCart, badge: cartCount || undefined },
-    { key: "orders",     label: "Órdenes",     icon: Package },
+    { key: "customer", label: "Cliente", icon: User },
+    {
+      key: "cart",
+      label: "Carrito",
+      icon: ShoppingCart,
+      badge: cartCount || undefined,
+    },
+    {
+      key: "orders",
+      label: "Órdenes",
+      icon: Package,
+      badge: displayedOrders.length || undefined,
+    },
   ];
 
-  /* ====== Bounce: después de confirmar, pasar por Carrito y caer en Crear Orden ====== */
+  /* Bounce: después de confirmar promo → Carrito → Cliente */
   const goToCreateOrder = () => {
     setActiveTab("cart");
-    setTimeout(() => setActiveTab("customer"), 140); // salto suave
+    setTimeout(() => setActiveTab("customer"), 140);
   };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
       {/* Toasts */}
       <div className="fixed top-4 right-4 space-y-2 z-50">
-        {notifs.map((n) => <Toast key={n.id} n={n} onClose={dismiss} />)}
+        {notifs.map((n) => (
+          <Toast key={n.id} n={n} onClose={dismiss} />
+        ))}
       </div>
 
       {/* Header */}
@@ -345,18 +1037,33 @@ const CashierPanel: React.FC<Props> = ({ ordersApi, onOrderCreated }) => {
         <div className="bg-white rounded-xl shadow-sm p-6 mb-6 border border-gray-200">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-gradient-to-br from-red-500 to-pink-500 rounded-xl flex items-center justify-center text-white text-xl font-bold">🍣</div>
+              <div className="w-12 h-12 bg-gradient-to-br from-red-500 to-pink-500 rounded-xl flex items-center justify-center text-white text-xl font-bold">
+                🍣
+              </div>
               <div>
                 <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-                  Panel de Cajero/Vendedor <span className="text-sm bg-green-100 text-green-700 px-2 py-1 rounded-full">En línea</span>
+                  Panel de Cajero/Vendedor{" "}
+                  <span className="text-sm bg-green-100 text-green-700 px-2 py-1 rounded-full">
+                    En línea
+                  </span>
                 </h1>
-                <p className="text-gray-600">Flujo: Promociones → Carrito → Cliente (crear pedido)</p>
+                <p className="text-gray-600">
+                  Flujo: Promociones → Carrito → Cliente (crear pedido)
+                </p>
               </div>
             </div>
             <div className="text-right">
               <p className="text-sm text-gray-500">Rol: Cajero</p>
-              <p className="text-sm text-gray-500">📍 Sushikoi — Puerto Montt</p>
-              <p className="text-xs text-gray-400">🕒 {now.toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit" })}</p>
+              <p className="text-sm text-gray-500">
+                📍 Sushikoi — Puerto Montt
+              </p>
+              <p className="text-xs text-gray-400">
+                🕒{" "}
+                {now.toLocaleTimeString("es-CL", {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
+              </p>
             </div>
           </div>
         </div>
@@ -369,13 +1076,17 @@ const CashierPanel: React.FC<Props> = ({ ordersApi, onOrderCreated }) => {
                 key={t.key}
                 onClick={() => setActiveTab(t.key)}
                 className={`flex items-center gap-2 px-6 py-4 border-b-2 transition-all duration-300 relative ${
-                  activeTab === t.key ? "border-red-500 text-red-600 bg-red-50" : "border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50"
+                  activeTab === t.key
+                    ? "border-red-500 text-red-600 bg-red-50"
+                    : "border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50"
                 }`}
               >
                 <t.icon size={18} />
                 {t.label}
                 {typeof t.badge === "number" && (
-                  <span className="bg-red-500 text-white text-xs px-2 py-1 rounded-full">{t.badge}</span>
+                  <span className="bg-red-500 text-white text-xs px-2 py-1 rounded-full">
+                    {t.badge}
+                  </span>
                 )}
               </button>
             ))}
@@ -388,15 +1099,47 @@ const CashierPanel: React.FC<Props> = ({ ordersApi, onOrderCreated }) => {
           {activeTab === "dashboard" && (
             <div className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                <KpiCard icon={<Package className="text-blue-600" size={24} />} title="Órdenes Hoy" value={todayOrders} sub="+12% vs ayer" color="blue" />
-                <KpiCard icon={<DollarSign className="text-green-600" size={24} />} title="Ingresos Hoy" value={`$${formatCLP(todayRevenue)}`} sub="+8% vs ayer" color="green" />
-                <KpiCard icon={<TrendingUp className="text-purple-600" size={24} />} title="Ticket Promedio" value={`$${formatCLP(avgOrderValue)}`} sub="+5% vs ayer" color="purple" />
-                <KpiCard icon={<Clock className="text-orange-600" size={24} />} title="En Cocina" value={cooking} sub="Activos" color="orange" />
+                <KpiCard
+                  icon={<Package className="text-blue-600" size={24} />}
+                  title="Órdenes Hoy"
+                  value={todayOrders}
+                  sub="+12% vs ayer"
+                  color="blue"
+                />
+                <KpiCard
+                  icon={<DollarSign className="text-green-600" size={24} />}
+                  title="Ingresos Hoy"
+                  value={`$${formatCLP(todayRevenue)}`}
+                  sub="+8% vs ayer"
+                  color="green"
+                />
+                <KpiCard
+                  icon={<TrendingUp className="text-purple-600" size={24} />}
+                  title="Ticket Promedio"
+                  value={`$${formatCLP(avgOrderValue)}`}
+                  sub="+5% vs ayer"
+                  color="purple"
+                />
+                <KpiCard
+                  icon={<Clock className="text-orange-600" size={24} />}
+                  title="En Cocina"
+                  value={cooking}
+                  sub="Activos"
+                  color="orange"
+                />
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <StatusCard title="📋 Pendientes" value={pending} barColor="yellow" />
-                <StatusCard title="👨‍🍳 En Cocina" value={cooking} barColor="orange" />
+                <StatusCard
+                  title="📋 Pendientes"
+                  value={pending}
+                  barColor="yellow"
+                />
+                <StatusCard
+                  title="👨‍🍳 En Cocina"
+                  value={cooking}
+                  barColor="orange"
+                />
                 <StatusCard title="✅ Listos" value={ready} barColor="green" />
               </div>
             </div>
@@ -407,7 +1150,7 @@ const CashierPanel: React.FC<Props> = ({ ordersApi, onOrderCreated }) => {
             <PromotionsGrid
               onAddToCart={addToCart}
               onAddToCartDetailed={addToCartDetailed}
-              onAfterConfirm={goToCreateOrder}   // ✅ bounce a Carrito → Cliente
+              onAfterConfirm={goToCreateOrder}
             />
           )}
 
@@ -420,69 +1163,121 @@ const CashierPanel: React.FC<Props> = ({ ordersApi, onOrderCreated }) => {
               onClearCart={clearCart}
               total={grandTotal}
               estimatedTime={estimatedCooking || 15}
-              onContinue={createOrder}
+              onContinue={() => {
+                const hasMin =
+                  !!customerData.name?.trim() &&
+                  !!customerData.phone?.trim() &&
+                  !!customerData.street?.trim() &&
+                  !!customerData.number?.trim();
+
+                if (hasMin) createOrder();
+                else {
+                  setActiveTab("customer");
+                  notify(
+                    "info",
+                    "Completa los datos del cliente para continuar"
+                  );
+                }
+              }}
             />
           )}
 
           {/* Cliente */}
           {activeTab === "customer" && (
-            <CustomerForm
-              customerData={customerData}
-              onCustomerDataChange={setCustomerData}
-              errors={errors}
-              customers={customers}
-              onSelectCustomer={(c) => {
-                setCustomerData(prev => ({
-                  ...prev,
-                  name: c?.name ?? "",
-                  phone: c?.phone ?? "",
-                  street: c?.street ?? "",
-                  number: "",
-                  sector: c?.sector ?? "",
-                  city: c?.city ?? "Puerto Montt",
-                  references: c?.references ?? "",
-                }));
-                setActiveTab("customer");
-                notify("info", `Cliente ${c?.name ?? "Sin nombre"} seleccionado`);
-              }}
-              cart={cart}
-              cartTotal={cartTotal}
-              estimatedTime={estimatedCooking || 15}
-              onCreateOrder={createOrder}
-              isCreatingOrder={isCreatingOrder}
-              orderMeta={orderMeta}
-              onRequestEditExtras={() => setActiveTab("promotions")}
-              onGoToCart={() => setActiveTab("cart")}  
-            />
+            existingCustomers.length > 0 ? (
+              <ExistingCustomersPanel
+                customers={existingCustomers}
+                onUseCustomer={(c) => {
+                  setCustomerData((prev) => ({
+                    ...prev,
+                    name: c.name || "",
+                    phone: c.phone || "",
+                    street: c.street || "",
+                    number: c.number || "",
+                    sector: c.sector || "",
+                    city: c.city || "Puerto Montt",
+                    references: c.references || "",
+                  }));
+                  // Crear pedido inmediatamente. Si prefieres confirmar, cambia por setActiveTab("cart")
+                  createOrder();
+                }}
+              />
+            ) : (
+              // Fallback: si no hay clientes en store, usa el formulario clásico
+              <CustomerForm
+                customerData={customerData}
+                onCustomerDataChange={setCustomerData}
+                errors={errors}
+                customers={customers}
+                onSelectCustomer={(c) => {
+                  setCustomerData((prev) => ({
+                    ...prev,
+                    name: c?.name ?? "",
+                    phone: c?.phone ?? "",
+                    street: c?.street ?? "",
+                    number: c?.number ?? prev.number ?? "",
+                    sector: c?.sector ?? prev.sector ?? "",
+                    city: c?.city ?? prev.city ?? "Puerto Montt",
+                    references: c?.references ?? prev.references ?? "",
+                  }));
+                  notify(
+                    "info",
+                    `Cliente ${c?.name ?? "Sin nombre"} seleccionado`
+                  );
+                }}
+                cart={cart}
+                cartTotal={cartTotal}
+                estimatedTime={estimatedCooking || 15}
+                onCreateOrder={createOrder}
+                isCreatingOrder={isCreatingOrder}
+                orderMeta={orderMeta}
+                onRequestEditExtras={() => setActiveTab("promotions")}
+                onGoToCart={() => setActiveTab("cart")}
+              />
+            )
           )}
 
           {/* Órdenes */}
           {activeTab === "orders" && (
             <div className="space-y-4">
-              {ordersApi.orders.length === 0 ? (
+              {displayedOrders.length === 0 ? (
                 <div className="bg-white p-10 rounded-xl text-center text-gray-500 border border-gray-200">
                   No hay órdenes aún
                 </div>
               ) : (
-                ordersApi.orders.map((o) => (
-                  <div key={o.id} className="bg-white p-4 rounded-xl border border-gray-200 hover:shadow-sm transition">
+                displayedOrders.map((o) => (
+                  <div
+                    key={o.id}
+                    className="bg-white p-4 rounded-xl border border-gray-200 hover:shadow-sm transition"
+                  >
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="text-sm text-gray-500">#{o.publicCode} • {o.status.toUpperCase()}</p>
-                        <p className="font-semibold text-gray-900">{o.name} — {o.phone}</p>
+                        <p className="text-sm text-gray-500">
+                          #{o.publicCode} • {o.status.toUpperCase()}
+                        </p>
+                        <p className="font-semibold text-gray-900">
+                          {o.name} — {o.phone}
+                        </p>
                         <p className="text-sm text-gray-600">{o.address}</p>
                       </div>
                       <div className="flex items-center gap-3">
                         <button
                           className="inline-flex items-center gap-1 px-3 py-2 text-sm border rounded-lg hover:bg-gray-50"
-                          onClick={() => { setSelectedOrder(o as unknown as OrderUI); setShowDetail(true); }}
+                          onClick={() => {
+                            setSelectedOrder(o as unknown as OrderUI);
+                            setShowDetail(true);
+                          }}
                           title="Ver detalle"
                         >
-                          <Eye size={16}/> Detalle
+                          <Eye size={16} /> Detalle
                         </button>
                         <div className="text-right">
-                          <p className="text-xl font-bold text-rose-600">${formatCLP(o.total)}</p>
-                          <p className="text-xs text-gray-500">⏱️ {o.estimatedTime} min • {timeAgo(o.createdAt)}</p>
+                          <p className="text-xl font-bold text-rose-600">
+                            ${formatCLP(o.total)}
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            ⏱️ {o.estimatedTime} min • {timeAgo(o.createdAt)}
+                          </p>
                         </div>
                       </div>
                     </div>
@@ -494,41 +1289,87 @@ const CashierPanel: React.FC<Props> = ({ ordersApi, onOrderCreated }) => {
         </div>
       </div>
 
-      <OrderDetailModal open={showDetail} onClose={() => setShowDetail(false)} order={selectedOrder} />
+      <OrderDetailModal
+        open={showDetail}
+        onClose={() => setShowDetail(false)}
+        order={selectedOrder}
+      />
     </div>
   );
 };
 
 /* ===== UI helpers ===== */
-const KpiCard: React.FC<{ icon: React.ReactNode; title: string; value: React.ReactNode; sub?: string; color: "blue"|"green"|"purple"|"orange" }> = ({ icon, title, value, sub, color }) => {
-  const bg = { blue: "bg-blue-100", green: "bg-green-100", purple: "bg-purple-100", orange: "bg-orange-100" }[color];
+const KpiCard: React.FC<{
+  icon: React.ReactNode;
+  title: string;
+  value: React.ReactNode;
+  sub?: string;
+  color: "blue" | "green" | "purple" | "orange";
+}> = ({ icon, title, value, sub, color }) => {
+  const bg = {
+    blue: "bg-blue-100",
+    green: "bg-green-100",
+    purple: "bg-purple-100",
+    orange: "bg-orange-100",
+  }[color];
   return (
     <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition">
       <div className="flex items-center justify-between">
         <div>
           <p className="text-gray-600 text-sm">{title}</p>
           <p className="text-3xl font-bold text-gray-900">{value}</p>
-          {sub && <p className={`text-sm ${color === "green" ? "text-green-600" : "text-gray-500"}`}>↗ {sub}</p>}
+          {sub && (
+            <p
+              className={`text-sm ${
+                color === "green" ? "text-green-600" : "text-gray-500"
+              }`}
+            >
+              ↗ {sub}
+            </p>
+          )}
         </div>
-        <div className={`w-12 h-12 ${bg} rounded-xl flex items-center justify-center`}>{icon}</div>
+        <div
+          className={`w-12 h-12 ${bg} rounded-xl flex items-center justify-center`}
+        >
+          {icon}
+        </div>
       </div>
     </div>
   );
 };
-const StatusCard: React.FC<{ title: string; value: number; barColor: "yellow"|"orange"|"green" }> = ({ title, value, barColor }) => {
-  const bg  = { yellow: "bg-yellow-200", orange: "bg-orange-200", green: "bg-green-200" }[barColor];
-  const bar = { yellow: "bg-yellow-500", orange: "bg-orange-500", green: "bg-green-500" }[barColor];
+const StatusCard: React.FC<{
+  title: string;
+  value: number;
+  barColor: "yellow" | "orange" | "green";
+}> = ({ title, value, barColor }) => {
+  const bg = {
+    yellow: "bg-yellow-200",
+    orange: "bg-orange-200",
+    green: "bg-green-200",
+  }[barColor];
+  const bar = {
+    yellow: "bg-yellow-500",
+    orange: "bg-orange-500",
+    green: "bg-green-500",
+  }[barColor];
   return (
-    <div className={`bg-gradient-to-br from-${barColor}-50 to-${barColor}-100 border border-${barColor}-200 rounded-xl p-6 hover:shadow-lg transition`}>
+    <div
+      className={`bg-gradient-to-br from-${barColor}-50 to-${barColor}-100 border border-${barColor}-200 rounded-xl p-6 hover:shadow-lg transition`}
+    >
       <div className="flex items-center justify-between mb-4">
         <h4 className={`font-semibold text-${barColor}-800`}>{title}</h4>
-        <div className={`w-8 h-8 ${bg} rounded-lg flex items-center justify-center`}>
+        <div
+          className={`w-8 h-8 ${bg} rounded-lg flex items-center justify-center`}
+        >
           <Clock size={16} className={`text-${barColor}-700`} />
         </div>
       </div>
       <p className={`text-3xl font-bold text-${barColor}-700 mb-2`}>{value}</p>
       <div className={`w-full ${bg} rounded-full h-2`}>
-        <div className={`${bar} h-2 rounded-full`} style={{ width: `${Math.min(value * 25, 100)}%` }} />
+        <div
+          className={`${bar} h-2 rounded-full`}
+          style={{ width: `${Math.min(value * 25, 100)}%` }}
+        />
       </div>
     </div>
   );
