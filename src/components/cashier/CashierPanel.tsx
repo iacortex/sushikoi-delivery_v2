@@ -24,11 +24,12 @@ import { getMenuItem } from "../../features/menu/catalog";
 import { KioskModal } from "../ui/KioskModal";
 
 import { useOrders } from "@/features/orders/useOrders";
+import type { OrderMeta } from "@/types";
 type OrdersApi = ReturnType<typeof useOrders>;
 
 const TOTEM_MODE = true;
 
-/* ===== Tipos UI ===== */
+/* ===== Tipos UI (locales) ===== */
 export interface CartItem {
   id: number;
   name: string;
@@ -73,6 +74,7 @@ interface OrderUI {
   createdAt: number;
   estimatedTime: number;
   paymentMethod: string;
+  meta?: OrderMeta; // ✅ para boleta
 }
 
 /* ===== Extras ===== */
@@ -89,7 +91,7 @@ interface SauceLine {
   extraFee?: number;
   feeTotal?: number;
 }
-interface OrderMeta {
+interface OrderMetaLocal {
   service: ServiceType;
   deliveryZone?: string;
   deliveryFee?: number;
@@ -129,7 +131,7 @@ const timeAgo = (ts: number) => {
   if (m < 60) return `${m}m`;
   return `${Math.floor(m / 60)}h`;
 };
-const extrasFromMeta = (m?: OrderMeta) => {
+const extrasFromMeta = (m?: OrderMetaLocal) => {
   if (!m) return 0;
   const delivery = m.service === "delivery" ? m.deliveryFee ?? 0 : 0;
   const changes = (m.changes ?? []).reduce((s, c) => s + (c?.fee ?? 0), 0);
@@ -140,6 +142,23 @@ const extrasFromMeta = (m?: OrderMeta) => {
     (m.agridulce?.feeTotal ?? m.agridulce?.extraFee ?? 0) +
     (m.acevichada?.feeTotal ?? m.acevichada?.extraFee ?? 0);
   return delivery + changes + sauces;
+};
+
+const EXTRAS_ITEM_ID = -777;
+const buildExtrasLabel = (m?: OrderMetaLocal): string => {
+  if (!m) return "Extras (delivery/cambios/salsas)";
+  const parts: string[] = [];
+  if (m.service === "delivery" && (m.deliveryFee ?? 0) > 0) parts.push("Delivery");
+  const changeFee = (m.changes ?? []).reduce((s, c) => s + (c?.fee ?? 0), 0);
+  if (changeFee > 0) parts.push("Cambios proteína");
+  const saucesFee =
+    (m.soy?.extraFee ?? m.soy?.feeTotal ?? 0) +
+    (m.ginger?.extraFee ?? m.ginger?.feeTotal ?? 0) +
+    (m.wasabi?.extraFee ?? m.wasabi?.feeTotal ?? 0) +
+    (m.agridulce?.feeTotal ?? m.agridulce?.extraFee ?? 0) +
+    (m.acevichada?.feeTotal ?? m.acevichada?.extraFee ?? 0);
+  if (saucesFee > 0) parts.push("Salsas");
+  return `Extras (${parts.join(" / ") || "delivery/cambios/salsas"})`;
 };
 
 /* ===== Toast ===== */
@@ -175,19 +194,14 @@ const Toast: React.FC<{ n: Notification; onClose: (id: number) => void }> = ({
     info: "bg-blue-50 border-blue-200",
   }[n.type];
   return (
-    <div
-      className={`${bg} border rounded-lg p-3 shadow-md animate-slide-in-right`}
-    >
+    <div className={`${bg} border rounded-lg p-3 shadow-md animate-slide-in-right`}>
       <div className="flex items-start gap-2">
         <Icon />
         <div className="flex-1">
           <p className="text-sm font-medium text-gray-900">{n.message}</p>
           <p className="text-xs text-gray-500">{timeAgo(n.timestamp)}</p>
         </div>
-        <button
-          onClick={() => onClose(n.id)}
-          className="text-gray-400 hover:text-gray-600"
-        >
+        <button onClick={() => onClose(n.id)} className="text-gray-400 hover:text-gray-600">
           <XCircle size={14} />
         </button>
       </div>
@@ -203,9 +217,7 @@ function enforceOneProteinChange(
 ): ChangeLine[] {
   const list = incoming ?? [];
   if (list.length <= 1) return list;
-  const wantsMore = confirmFn(
-    "Ya tienes 1 cambio de proteína. ¿Quieres agregar otro cambio?"
-  );
+  const wantsMore = confirmFn("Ya tienes 1 cambio de proteína. ¿Quieres agregar otro cambio?");
   if (wantsMore) {
     notify("info", "Se agregaron cambios de proteína adicionales.");
     return list;
@@ -215,7 +227,7 @@ function enforceOneProteinChange(
 }
 
 /* =========================================================
-   MODAL DETALLE — Boleta + Stepper de estados + Barra tiempo
+   MODAL DETALLE — Boleta + Stepper + Extras con cantidades
    ========================================================= */
 const OrderDetailModal: React.FC<{
   open: boolean;
@@ -248,6 +260,7 @@ const OrderDetailModal: React.FC<{
     return map[(s || "").toLowerCase()] ?? 0;
   };
 
+  // Progreso por tiempo
   const [now, setNow] = React.useState(Date.now());
   React.useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
@@ -261,17 +274,59 @@ const OrderDetailModal: React.FC<{
   const idxByTime = Math.min(4, Math.floor(percentByTime * STAGES.length));
   const currentIdx = Math.max(idxByStatus, idxByTime);
 
-  const itemsSubtotal = order.cart.reduce(
+  // --------- EXTRAS desde meta ---------
+  const meta = order.meta;
+
+  const deliveryFee = meta?.service === "delivery" ? meta?.deliveryFee ?? 0 : 0;
+
+  const changes = meta?.changes ?? [];
+  const changesCount = changes.length;
+  const changesFee = changes.reduce((s, c) => s + (c?.fee ?? 0), 0);
+
+  const soyQtyExtra = Math.max(0, (meta?.soy?.qty || 0) - (meta?.soy?.included || 0));
+  const soyFee = meta?.soy?.extraFee ?? meta?.soy?.feeTotal ?? 0;
+
+  const gingerQtyExtra = Math.max(0, (meta?.ginger?.qty || 0) - (meta?.ginger?.included || 0));
+  const gingerFee = meta?.ginger?.extraFee ?? meta?.ginger?.feeTotal ?? 0;
+
+  const wasabiQtyExtra = Math.max(0, (meta?.wasabi?.qty || 0) - (meta?.wasabi?.included || 0));
+  const wasabiFee = meta?.wasabi?.extraFee ?? meta?.wasabi?.feeTotal ?? 0;
+
+  const agridulceQty = meta?.agridulce?.qty || 0;
+  const agridulceFee = meta?.agridulce?.feeTotal || 0;
+
+  const acevichadaQty = meta?.acevichada?.qty || 0;
+  const acevichadaFee = meta?.acevichada?.feeTotal || 0;
+
+  const extrasLines = [
+    { label: "Delivery", qty: deliveryFee > 0 ? 1 : 0, amount: deliveryFee },
+    { label: "Cambio de proteína", qty: changesCount, amount: changesFee },
+    { label: "Soya extra", qty: soyQtyExtra, amount: soyFee },
+    { label: "Jengibre extra", qty: gingerQtyExtra, amount: gingerFee },
+    { label: "Wasabi extra", qty: wasabiQtyExtra, amount: wasabiFee },
+    { label: "Agridulce", qty: agridulceQty, amount: agridulceFee },
+    { label: "Acevichada", qty: acevichadaQty, amount: acevichadaFee },
+  ].filter((l) => (l.qty || 0) > 0 || (l.amount || 0) > 0);
+
+  const extrasTotalMeta = extrasLines.reduce((s, l) => s + (l.amount || 0), 0);
+
+  // Excluir la línea sintética "Extras" del carrito para no duplicar
+  const cartWithoutExtras = (order.cart || []).filter((it) => it.id !== EXTRAS_ITEM_ID);
+
+  const itemsSubtotal = cartWithoutExtras.reduce(
     (s, it) => s + it.discountPrice * it.quantity,
     0
   );
-  const extras = Math.max(0, (order.total ?? 0) - itemsSubtotal);
+
   const fmt = (n: number) =>
     new Intl.NumberFormat("es-CL", { maximumFractionDigits: 0 }).format(n);
   const dt = new Date(order.createdAt || Date.now()).toLocaleString("es-CL", {
     dateStyle: "short",
     timeStyle: "short",
   });
+
+  const computedTotal = itemsSubtotal + extrasTotalMeta;
+  const totalToShow = typeof order.total === "number" ? order.total : computedTotal;
 
   return (
     <KioskModal
@@ -280,7 +335,7 @@ const OrderDetailModal: React.FC<{
       title={`Pedido #${order.publicCode}`}
       subtitle={`${order.name} • ${order.phone}`}
       designWidth={420}
-      designHeight={780}
+      designHeight={820}
     >
       {/* Stepper + barra tiempo */}
       <div className="mb-4">
@@ -299,16 +354,12 @@ const OrderDetailModal: React.FC<{
                   >
                     <Icon size={14} />
                   </div>
-                  <span className={`mt-1 ${active ? "text-gray-900" : ""}`}>
-                    {st.label}
-                  </span>
+                  <span className={`mt-1 ${active ? "text-gray-900" : ""}`}>{st.label}</span>
                 </div>
                 {i < STAGES.length - 1 && (
                   <div className="w-full h-1 mx-2 bg-gray-200 rounded">
                     <div
-                      className={`h-1 rounded ${
-                        i < currentIdx ? "bg-rose-600" : "bg-gray-200"
-                      }`}
+                      className={`h-1 rounded ${i < currentIdx ? "bg-rose-600" : "bg-gray-200"}`}
                       style={{ width: "100%" }}
                     />
                   </div>
@@ -321,9 +372,7 @@ const OrderDetailModal: React.FC<{
         <div className="w-full bg-gray-200 h-2 rounded">
           <div
             className="h-2 rounded bg-rose-600 transition-all duration-500"
-            style={{
-              width: `${Math.min(100, Math.max(0, percentByTime * 100))}%`,
-            }}
+            style={{ width: `${Math.min(100, Math.max(0, percentByTime * 100))}%` }}
           />
         </div>
         <div className="flex justify-between text-[11px] text-gray-500 mt-1">
@@ -338,9 +387,7 @@ const OrderDetailModal: React.FC<{
       <div className="w-full flex justify-center">
         <div className="bg-white shadow-sm rounded-xl border border-gray-200 p-4 font-mono text-sm text-gray-900 w-[360px] print:w-[80mm]">
           <div className="text-center">
-            <div className="text-lg font-extrabold tracking-widest">
-              SUSHIKOI
-            </div>
+            <div className="text-lg font-extrabold tracking-widest">SUSHIKOI</div>
             <div className="text-xs text-gray-500">Puerto Montt</div>
             <div className="text-xs text-gray-500">RUT: 76.123.456-K</div>
           </div>
@@ -349,15 +396,11 @@ const OrderDetailModal: React.FC<{
 
           <div className="grid grid-cols-2 gap-y-1 text-xs">
             <div className="text-gray-600">Boleta</div>
-            <div className="text-right font-semibold">
-              #{order.publicCode || order.id}
-            </div>
+            <div className="text-right font-semibold">#{order.publicCode || order.id}</div>
             <div className="text-gray-600">Fecha</div>
             <div className="text-right">{dt}</div>
             <div className="text-gray-600">Estado</div>
-            <div className="text-right uppercase">
-              {STAGES[currentIdx]?.label || order.status}
-            </div>
+            <div className="text-right uppercase">{order.status}</div>
             <div className="text-gray-600">Pago</div>
             <div className="text-right">{order.paymentMethod || "—"}</div>
             <div className="text-gray-600">Cliente</div>
@@ -370,7 +413,7 @@ const OrderDetailModal: React.FC<{
 
           <div className="mb-1 font-semibold">Ítems</div>
           <div className="space-y-2">
-            {order.cart.map((it) => (
+            {cartWithoutExtras.map((it) => (
               <div key={it.id} className="leading-5">
                 <div className="flex items-start justify-between">
                   <div className="pr-2">
@@ -378,24 +421,18 @@ const OrderDetailModal: React.FC<{
                       <span className="truncate max-w-[210px]">
                         {it.name}
                         {it.items?.length
-                          ? ` — ${it.items.slice(0, 2).join(", ")}${
-                              it.items.length > 2 ? "…" : ""
-                            }`
+                          ? ` — ${it.items.slice(0, 2).join(", ")}${it.items.length > 2 ? "…" : ""}`
                           : ""}
                       </span>
                       <span className="text-gray-500">x{it.quantity}</span>
                     </div>
                   </div>
-                  <div className="tabular-nums">
-                    ${fmt(it.discountPrice * it.quantity)}
-                  </div>
+                  <div className="tabular-nums">${fmt(it.discountPrice * it.quantity)}</div>
                 </div>
                 {!!it.discount && it.discount > 0 && (
                   <div className="text-[11px] text-gray-500 flex justify-between">
                     <span>Precio lista</span>
-                    <span className="line-through">
-                      ${fmt(it.originalPrice * it.quantity)}
-                    </span>
+                    <span className="line-through">${fmt(it.originalPrice * it.quantity)}</span>
                   </div>
                 )}
               </div>
@@ -404,63 +441,48 @@ const OrderDetailModal: React.FC<{
 
           <div className="my-3 border-t border-dashed border-gray-300" />
 
+          {/* Totales base + extras */}
           <div className="space-y-1 text-[13px]">
             <div className="flex justify-between">
-              <span className="text-gray-600">Subtotal</span>
+              <span className="text-gray-600">Subtotal ítems</span>
               <span className="tabular-nums">${fmt(itemsSubtotal)}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-gray-600">Extras/Delivery</span>
-              <span className="tabular-nums">${fmt(extras)}</span>
+              <span className="text-gray-600">Extras</span>
+              <span className="tabular-nums">${fmt(extrasTotalMeta)}</span>
             </div>
             <div className="flex justify-between text-base font-extrabold mt-2">
               <span>Total</span>
-              <span className="tabular-nums text-rose-600">
-                ${fmt(order.total)}
-              </span>
+              <span className="tabular-nums text-rose-600">${fmt(totalToShow)}</span>
             </div>
           </div>
 
-          <div className="my-3 border-t border-dashed border-gray-300" />
-
-          <div className="text-xs text-gray-600 flex items-center justify-between">
-            <div>
-              ETA restante:{" "}
-              <b className="text-gray-800">
-                {Math.max(
-                  0,
-                  Math.ceil((1 - percentByTime) * (order.estimatedTime || 15))
-                )}{" "}
-                min
-              </b>
-            </div>
-            <div className="text-right">Método: {order.paymentMethod}</div>
-          </div>
-
-          <div className="mt-4 flex flex-col items-center">
-            <div className="w-40 h-10 bg-[repeating-linear-gradient(90deg,#111_0_3px,#fff_3px_6px)] rounded-sm" />
-            <div className="text-[11px] text-gray-500 mt-1 tracking-widest">
-              #{order.publicCode || order.id}
-            </div>
-          </div>
-
-          <div className="mt-4 text-center text-[11px] text-gray-500">
-            ¡Gracias por tu compra!
-          </div>
+          {/* Detalle de extras con cantidades */}
+          {extrasLines.length > 0 && (
+            <>
+              <div className="my-3 border-t border-dashed border-gray-300" />
+              <div className="mb-1 font-semibold">Detalle extras</div>
+              <div className="space-y-1 text-[12px]">
+                {extrasLines.map((l, idx) => (
+                  <div key={idx} className="flex justify-between">
+                    <span className="text-gray-600">
+                      {l.label}
+                      {l.qty ? ` x${l.qty}` : ""}
+                    </span>
+                    <span className="tabular-nums">${fmt(l.amount)}</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
         </div>
       </div>
 
       <div className="mt-4 flex justify-end gap-2 print:hidden">
-        <button
-          onClick={() => window.print()}
-          className="px-3 py-2 text-sm border rounded-lg hover:bg-gray-50"
-        >
+        <button onClick={() => window.print()} className="px-3 py-2 text-sm border rounded-lg hover:bg-gray-50">
           Imprimir
         </button>
-        <button
-          onClick={onClose}
-          className="px-3 py-2 text-sm bg-rose-600 text-white rounded-lg hover:bg-rose-700"
-        >
+        <button onClick={onClose} className="px-3 py-2 text-sm bg-rose-600 text-white rounded-lg hover:bg-rose-700">
           Cerrar
         </button>
       </div>
@@ -501,9 +523,7 @@ const ExistingCustomersPanel: React.FC<{
     <div className="bg-white rounded-xl border border-gray-200">
       <div className="p-4 border-b">
         <h3 className="text-lg font-semibold">Clientes registrados</h3>
-        <p className="text-sm text-gray-500">
-          Busca por nombre, teléfono o dirección.
-        </p>
+        <p className="text-sm text-gray-500">Busca por nombre, teléfono o dirección.</p>
         <div className="mt-3">
           <input
             value={q}
@@ -515,9 +535,7 @@ const ExistingCustomersPanel: React.FC<{
       </div>
 
       {filtered.length === 0 ? (
-        <div className="p-10 text-center text-gray-500">
-          Sin resultados. Prueba con otro término.
-        </div>
+        <div className="p-10 text-center text-gray-500">Sin resultados. Prueba con otro término.</div>
       ) : (
         <ul className="divide-y">
           {filtered.map((c, i) => (
@@ -527,14 +545,12 @@ const ExistingCustomersPanel: React.FC<{
                 <p className="text-sm text-gray-600 truncate">{c.phone}</p>
                 <p className="text-sm text-gray-500 truncate">
                   {c.address ||
-                    `${c.street || ""} ${c.number || ""}${
-                      c.sector ? `, ${c.sector}` : ""
-                    }${c.city ? `, ${c.city}` : ""}`}
+                    `${c.street || ""} ${c.number || ""}${c.sector ? `, ${c.sector}` : ""}${
+                      c.city ? `, ${c.city}` : ""
+                    }`}
                 </p>
                 {!!c.lastAt && (
-                  <p className="text-xs text-gray-400">
-                    Último pedido: {new Date(c.lastAt).toLocaleString("es-CL")}
-                  </p>
+                  <p className="text-xs text-gray-400">Último pedido: {new Date(c.lastAt).toLocaleString("es-CL")}</p>
                 )}
               </div>
               <button
@@ -554,7 +570,7 @@ const ExistingCustomersPanel: React.FC<{
 /* ===================== Componente Principal ===================== */
 type Props = {
   ordersApi: OrdersApi;
-  onOrderCreated?: () => void; // no lo usamos para no saltar a cocina
+  onOrderCreated?: () => void; // no saltamos a cocina aquí
 };
 
 const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
@@ -564,19 +580,16 @@ const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
 
   // Carrito
   const [cart, setCart] = useState<CartItem[]>([]);
-  const [selectedOrder, setSelectedOrder] = useState<OrderUI | undefined>(
-    undefined
-  );
+  const [selectedOrder, setSelectedOrder] = useState<OrderUI | undefined>(undefined);
   const [showDetail, setShowDetail] = useState(false);
 
   // Órdenes recién creadas (buffer local)
   const [recentOrders, setRecentOrders] = useState<OrderUI[]>([]);
 
-  // Fallback demo para formulario (solo si no hay clientes reales)
+  // Fallback demo para formulario
   const [customers, setCustomers] = useState<any[]>([]);
   useEffect(() => {
-    const rand = (a: number, b: number) =>
-      Math.floor(Math.random() * (b - a + 1)) + a;
+    const rand = (a: number, b: number) => Math.floor(Math.random() * (b - a + 1)) + a;
     const pick = <T,>(arr: T[]) => arr[Math.floor(Math.random() * arr.length)];
     const first = ["Juan", "María", "Camila", "Javier", "Daniela", "Felipe"];
     const last = ["Pérez", "García", "Soto", "Fuentes", "Rojas", "Castro"];
@@ -617,7 +630,7 @@ const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
   });
   const [errors, setErrors] = useState<FormErrors>({});
   const [isCreatingOrder, setIsCreatingOrder] = useState(false);
-  const [orderMeta, setOrderMeta] = useState<OrderMeta | undefined>(undefined);
+  const [orderMeta, setOrderMeta] = useState<OrderMetaLocal | undefined>(undefined);
 
   // reloj UI y toasts
   const [now, setNow] = useState(new Date());
@@ -627,14 +640,8 @@ const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
   }, []);
   const [notifs, setNotifs] = useState<Notification[]>([]);
   const notify = (t: NType, m: string) =>
-    setNotifs((p) =>
-      [
-        { id: Date.now(), type: t, message: m, timestamp: Date.now() },
-        ...p,
-      ].slice(0, 5)
-    );
-  const dismiss = (id: number) =>
-    setNotifs((p) => p.filter((n) => n.id !== id));
+    setNotifs((p) => [{ id: Date.now(), type: t, message: m, timestamp: Date.now() }, ...p].slice(0, 5));
+  const dismiss = (id: number) => setNotifs((p) => p.filter((n) => n.id !== id));
 
   /* ====== Carrito ====== */
   const addToCart = (promotionId: number, hintedBasePrice?: number) => {
@@ -645,11 +652,7 @@ const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
     const description = item?.desc ?? "Item agregado desde Promociones";
     const existing = cart.find((it) => it.id === promotionId);
     if (existing)
-      setCart(
-        cart.map((it) =>
-          it.id === promotionId ? { ...it, quantity: it.quantity + 1 } : it
-        )
-      );
+      setCart(cart.map((it) => (it.id === promotionId ? { ...it, quantity: it.quantity + 1 } : it)));
     else
       setCart((prev) => [
         ...prev,
@@ -680,11 +683,7 @@ const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
 
     const existing = cart.find((it) => it.id === p.promotionId);
     if (existing)
-      setCart(
-        cart.map((it) =>
-          it.id === p.promotionId ? { ...it, quantity: it.quantity + 1 } : it
-        )
-      );
+      setCart(cart.map((it) => (it.id === p.promotionId ? { ...it, quantity: it.quantity + 1 } : it)));
     else
       setCart((prev) => [
         ...prev,
@@ -706,57 +705,38 @@ const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
     const guarded = enforceOneProteinChange(p.changes, window.confirm, notify);
     setOrderMeta((prev) => {
       const nextService = p.service || prev?.service || "local";
-      const next: OrderMeta = {
+      const next: OrderMetaLocal = {
         service: nextService,
-        deliveryZone:
-          nextService === "delivery"
-            ? p.deliveryZone ?? prev?.deliveryZone
-            : undefined,
-        deliveryFee:
-          nextService === "delivery"
-            ? p.deliveryFee ?? prev?.deliveryFee ?? 0
-            : 0,
+        deliveryZone: nextService === "delivery" ? p.deliveryZone ?? prev?.deliveryZone : undefined,
+        deliveryFee: nextService === "delivery" ? p.deliveryFee ?? prev?.deliveryFee ?? 0 : 0,
         chopsticks: (prev?.chopsticks || 0) + (p.chopsticks || 0),
         changes: [...(prev?.changes || []), ...guarded],
         soy: {
           qty: (prev?.soy?.qty || 0) + (p.soy?.qty || 0),
           included: (prev?.soy?.included || 0) + (p.soy?.included || 0),
-          extraFee:
-            (prev?.soy?.extraFee || 0) +
-            (p.soy?.extraFee ?? p.soy?.feeTotal ?? 0),
+          extraFee: (prev?.soy?.extraFee || 0) + (p.soy?.extraFee ?? p.soy?.feeTotal ?? 0),
         },
         ginger: {
           qty: (prev?.ginger?.qty || 0) + (p.ginger?.qty || 0),
           included: (prev?.ginger?.included || 0) + (p.ginger?.included || 0),
-          extraFee:
-            (prev?.ginger?.extraFee || 0) +
-            (p.ginger?.extraFee ?? p.ginger?.feeTotal ?? 0),
+          extraFee: (prev?.ginger?.extraFee || 0) + (p.ginger?.extraFee ?? p.ginger?.feeTotal ?? 0),
         },
         wasabi: {
           qty: (prev?.wasabi?.qty || 0) + (p.wasabi?.qty || 0),
           included: (prev?.wasabi?.included || 0) + (p.wasabi?.included || 0),
-          extraFee:
-            (prev?.wasabi?.extraFee || 0) +
-            (p.wasabi?.extraFee ?? p.wasabi?.feeTotal ?? 0),
+          extraFee: (prev?.wasabi?.extraFee || 0) + (p.wasabi?.extraFee ?? p.wasabi?.feeTotal ?? 0),
         },
         agridulce: {
           qty: (prev?.agridulce?.qty || 0) + (p.agridulce?.qty || 0),
-          feeTotal:
-            (prev?.agridulce?.feeTotal || 0) +
-            (p.agridulce?.feeTotal ?? p.agridulce?.extraFee ?? 0),
+          feeTotal: (prev?.agridulce?.feeTotal || 0) + (p.agridulce?.feeTotal ?? p.agridulce?.extraFee ?? 0),
         },
         acevichada: {
           qty: (prev?.acevichada?.qty || 0) + (p.acevichada?.qty || 0),
-          feeTotal:
-            (prev?.acevichada?.feeTotal || 0) +
-            (p.acevichada?.feeTotal ?? p.acevichada?.extraFee ?? 0),
+          feeTotal: (prev?.acevichada?.feeTotal || 0) + (p.acevichada?.feeTotal ?? p.acevichada?.extraFee ?? 0),
         },
         note: p.note ?? prev?.note,
       };
-      const changesFee = (next.changes || []).reduce(
-        (s, c) => s + (c.fee || 0),
-        0
-      );
+      const changesFee = (next.changes || []).reduce((s, c) => s + (c.fee || 0), 0);
       const saucesFee =
         (next.soy?.extraFee || 0) +
         (next.ginger?.extraFee || 0) +
@@ -791,6 +771,30 @@ const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
     notify("success", "Detalle agregado (delivery/cambios/salsas)");
   };
 
+  // 👉 Sincroniza una línea "Extras" dentro del carrito al cambiar meta
+  useEffect(() => {
+    const totalExtras = extrasFromMeta(orderMeta);
+    setCart((prev) => {
+      const without = prev.filter((i) => i.id !== EXTRAS_ITEM_ID);
+      if (totalExtras <= 0) return without;
+      const label = buildExtrasLabel(orderMeta);
+      const extraItem: CartItem = {
+        id: EXTRAS_ITEM_ID,
+        name: label,
+        description: "Cargos adicionales (delivery / cambios / salsas)",
+        items: [],
+        originalPrice: totalExtras,
+        discountPrice: totalExtras,
+        discount: 0,
+        image: "➕",
+        popular: false,
+        cookingTime: 0,
+        quantity: 1,
+      };
+      return [...without, extraItem];
+    });
+  }, [orderMeta]);
+
   const removeFromCart = (id: number) => {
     const it = cart.find((i) => i.id === id);
     setCart(cart.filter((i) => i.id !== id));
@@ -806,18 +810,9 @@ const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
     notify("info", "Carrito vaciado");
   };
 
-  const cartTotal = useMemo(
-    () => cart.reduce((s, i) => s + i.discountPrice * i.quantity, 0),
-    [cart]
-  );
-  const cartCount = useMemo(
-    () => cart.reduce((s, i) => s + i.quantity, 0),
-    [cart]
-  );
-  const estimatedCooking = useMemo(
-    () => cart.reduce((m, i) => Math.max(m, i.cookingTime), 0),
-    [cart]
-  );
+  const cartTotal = useMemo(() => cart.reduce((s, i) => s + i.discountPrice * i.quantity, 0), [cart]);
+  const cartCount = useMemo(() => cart.reduce((s, i) => s + i.quantity, 0), [cart]);
+  const estimatedCooking = useMemo(() => cart.reduce((m, i) => Math.max(m, i.cookingTime), 0), [cart]);
 
   const validate = (): boolean => {
     const e: FormErrors = {};
@@ -825,59 +820,17 @@ const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
     if (!customerData.phone.trim()) e.phone = "El teléfono es obligatorio";
     if (!customerData.street.trim()) e.street = "La calle es obligatoria";
     if (!customerData.number.trim()) e.number = "El número es obligatorio";
-    if (cart.length === 0)
-      e.cart = "Debe agregar al menos una promoción al carrito";
+    if (cart.length === 0) e.cart = "Debe agregar al menos una promoción al carrito";
     setErrors(e);
     return Object.keys(e).length === 0;
   };
 
-  const grandTotal = useMemo(
-    () => cartTotal + extrasFromMeta(orderMeta),
-    [cartTotal, orderMeta]
-  );
+  // el total del carrito YA incluye la línea "Extras"
+  const grandTotal = useMemo(() => cartTotal, [cartTotal]);
 
-  // ===== Sincronizador tolerante =====
-  const syncOrders = async (api: unknown) => {
-    const a = api as any;
-    try {
-      if (typeof a?.fetchOrders === "function") return await a.fetchOrders();
-      if (typeof a?.refetch === "function") return await a.refetch();
-      if (typeof a?.refresh === "function") return await a.refresh();
-    } catch {
-      /* noop */
-    }
-  };
-
-  // ==== Traer clientes reales si el hook lo soporta ====
-  useEffect(() => {
-    const anyApi = ordersApi as any;
-    if (typeof anyApi?.fetchCustomers === "function") {
-      anyApi.fetchCustomers().catch(() => {});
-    }
-  }, [ordersApi]);
-
-  // ==== Construir lista de clientes existentes ====
-  type CustomerEntity = {
-    name?: string;
-    phone?: string;
-    street?: string;
-    number?: string;
-    sector?: string;
-    city?: string;
-    references?: string;
-    address?: string;
-    createdAt?: number;
-  };
-
+  // ==== Construir lista de clientes existentes desde el store/hook ====
   const existingCustomers: SimpleCustomer[] = useMemo(() => {
-    const anyApi = ordersApi as any;
-
-    // 1) usar customers del store si existen
-    const customersArr: CustomerEntity[] = Array.isArray(anyApi?.customers)
-      ? anyApi.customers
-      : [];
-
-    const fromCustomers = customersArr.map((c) => ({
+    const arr = (ordersApi.customers || []).map((c) => ({
       name: c.name || "",
       phone: c.phone || "",
       street: c.street || "",
@@ -885,51 +838,17 @@ const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
       sector: c.sector || "",
       city: c.city || "",
       references: c.references || "",
-      address:
-        c.address ||
-        [c.street, c.number, c.sector, c.city].filter(Boolean).join(", "),
+      address: c.address || [c.street, c.number, c.sector, c.city].filter(Boolean).join(", "),
       lastAt: c.createdAt || 0,
     }));
-
-    // 2) fallback: derivar desde órdenes
-    const fromOrders = (() => {
-      const map = new Map<string, SimpleCustomer>();
-      for (const o of (ordersApi.orders as any[]) || []) {
-        const phone = (o?.phone || "").trim();
-        if (!phone) continue;
-        const addr: string = o?.address || "";
-        const parts = addr.split(",").map((s: string) => s.trim());
-        const street = o?.street || parts[0] || "";
-        const city = o?.city || parts.slice(-1)[0] || "";
-        const number = o?.number || "";
-        const sector = o?.sector || "";
-        const sc: SimpleCustomer = {
-          name: o?.name || "",
-          phone,
-          street,
-          number,
-          sector,
-          city,
-          references: o?.references || "",
-          address: addr || [street, number, sector, city].filter(Boolean).join(", "),
-          lastAt: o?.createdAt || 0,
-        };
-        const prev = map.get(phone);
-        if (!prev || (sc.lastAt || 0) > (prev.lastAt || 0)) map.set(phone, sc);
-      }
-      return Array.from(map.values());
-    })();
-
-    const base = fromCustomers.length ? fromCustomers : fromOrders;
-    return base.sort((a, b) => (b.lastAt || 0) - (a.lastAt || 0));
-  }, [ordersApi.orders, (ordersApi as any).customers]);
+    return arr.sort((a, b) => (b.lastAt || 0) - (a.lastAt || 0));
+  }, [ordersApi.customers]);
 
   // Lista a mostrar: recientes + store (únicos)
   const displayedOrders = useMemo(() => {
     const map = new Map<number, OrderUI>();
     for (const o of recentOrders) map.set(o.id, o);
-    for (const o of (ordersApi.orders as unknown as OrderUI[]))
-      if (!map.has(o.id)) map.set(o.id, o);
+    for (const o of ordersApi.orders as unknown as OrderUI[]) if (!map.has(o.id)) map.set(o.id, o);
     return Array.from(map.values());
   }, [recentOrders, ordersApi.orders]);
 
@@ -942,13 +861,17 @@ const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
     setIsCreatingOrder(true);
     try {
       const coords = { lat: -41.4717, lng: -72.9411 };
-      const created = await ordersApi.createOrder({
+
+      const payload = {
         customerData: customerData as any,
         cart: cart as any,
         coordinates: coords as any,
         geocodePrecision: "approx" as any,
         routeMeta: null,
-      });
+        meta: orderMeta as OrderMeta | undefined, // ✅ manda meta
+      };
+
+      const created = await ordersApi.createOrder(payload as any);
 
       if (!created || !created.id) {
         notify("error", "No se pudo crear el pedido (respuesta inválida)");
@@ -957,10 +880,11 @@ const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
 
       ordersApi.updateOrderStatus?.(created.id, "pending");
 
-      setRecentOrders((prev) => [created as unknown as OrderUI, ...prev]);
-      await syncOrders(ordersApi);
+      // Fallback: si la API aún no devuelve meta, la agregamos localmente
+      const createdWithMeta = { ...(created as any), meta: created.meta ?? orderMeta } as OrderUI;
 
-      setSelectedOrder(created as unknown as OrderUI);
+      setRecentOrders((prev) => [createdWithMeta, ...prev]);
+      setSelectedOrder(createdWithMeta);
       setShowDetail(true);
 
       setCart([]);
@@ -980,6 +904,17 @@ const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
       setErrors({});
       setActiveTab("orders");
       notify("success", `Pedido #${created.publicCode} creado`);
+
+      // refresco tolerante (si existe)
+      try {
+        if (typeof (ordersApi as any)?.fetchOrders === "function") {
+          await (ordersApi as any).fetchOrders();
+        } else if (typeof (ordersApi as any)?.refetch === "function") {
+          await (ordersApi as any).refetch();
+        } else if (typeof (ordersApi as any)?.refresh === "function") {
+          await (ordersApi as any).refresh();
+        }
+      } catch {}
     } catch (err) {
       console.error("createOrder error:", err);
       notify("error", "Error al crear pedido");
@@ -991,9 +926,7 @@ const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
   /* ====== Métricas del store ====== */
   const todayOrders = ordersApi.orders.length;
   const todayRevenue = ordersApi.orders.reduce((s, o) => s + o.total, 0);
-  const avgOrderValue = todayOrders
-    ? Math.round(todayRevenue / todayOrders)
-    : 0;
+  const avgOrderValue = todayOrders ? Math.round(todayRevenue / todayOrders) : 0;
   const pending = ordersApi.orders.filter((o) => o.status === "pending").length;
   const cooking = ordersApi.orders.filter((o) => o.status === "cooking").length;
   const ready = ordersApi.orders.filter((o) => o.status === "ready").length;
@@ -1003,18 +936,8 @@ const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
     { key: "dashboard", label: "Dashboard", icon: BarChart3 },
     { key: "promotions", label: "Promociones", icon: Utensils },
     { key: "customer", label: "Cliente", icon: User },
-    {
-      key: "cart",
-      label: "Carrito",
-      icon: ShoppingCart,
-      badge: cartCount || undefined,
-    },
-    {
-      key: "orders",
-      label: "Órdenes",
-      icon: Package,
-      badge: displayedOrders.length || undefined,
-    },
+    { key: "cart", label: "Carrito", icon: ShoppingCart, badge: cartCount || undefined },
+    { key: "orders", label: "Órdenes", icon: Package, badge: displayedOrders.length || undefined },
   ];
 
   /* Bounce: después de confirmar promo → Carrito → Cliente */
@@ -1043,26 +966,16 @@ const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
               <div>
                 <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
                   Panel de Cajero/Vendedor{" "}
-                  <span className="text-sm bg-green-100 text-green-700 px-2 py-1 rounded-full">
-                    En línea
-                  </span>
+                  <span className="text-sm bg-green-100 text-green-700 px-2 py-1 rounded-full">En línea</span>
                 </h1>
-                <p className="text-gray-600">
-                  Flujo: Promociones → Carrito → Cliente (crear pedido)
-                </p>
+                <p className="text-gray-600">Flujo: Promociones → Carrito → Cliente (crear pedido)</p>
               </div>
             </div>
             <div className="text-right">
               <p className="text-sm text-gray-500">Rol: Cajero</p>
-              <p className="text-sm text-gray-500">
-                📍 Sushikoi — Puerto Montt
-              </p>
+              <p className="text-sm text-gray-500">📍 Sushikoi — Puerto Montt</p>
               <p className="text-xs text-gray-400">
-                🕒{" "}
-                {now.toLocaleTimeString("es-CL", {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })}
+                🕒 {now.toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit" })}
               </p>
             </div>
           </div>
@@ -1084,9 +997,7 @@ const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
                 <t.icon size={18} />
                 {t.label}
                 {typeof t.badge === "number" && (
-                  <span className="bg-red-500 text-white text-xs px-2 py-1 rounded-full">
-                    {t.badge}
-                  </span>
+                  <span className="bg-red-500 text-white text-xs px-2 py-1 rounded-full">{t.badge}</span>
                 )}
               </button>
             ))}
@@ -1099,47 +1010,15 @@ const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
           {activeTab === "dashboard" && (
             <div className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                <KpiCard
-                  icon={<Package className="text-blue-600" size={24} />}
-                  title="Órdenes Hoy"
-                  value={todayOrders}
-                  sub="+12% vs ayer"
-                  color="blue"
-                />
-                <KpiCard
-                  icon={<DollarSign className="text-green-600" size={24} />}
-                  title="Ingresos Hoy"
-                  value={`$${formatCLP(todayRevenue)}`}
-                  sub="+8% vs ayer"
-                  color="green"
-                />
-                <KpiCard
-                  icon={<TrendingUp className="text-purple-600" size={24} />}
-                  title="Ticket Promedio"
-                  value={`$${formatCLP(avgOrderValue)}`}
-                  sub="+5% vs ayer"
-                  color="purple"
-                />
-                <KpiCard
-                  icon={<Clock className="text-orange-600" size={24} />}
-                  title="En Cocina"
-                  value={cooking}
-                  sub="Activos"
-                  color="orange"
-                />
+                <KpiCard icon={<Package className="text-blue-600" size={24} />} title="Órdenes Hoy" value={todayOrders} sub="+12% vs ayer" color="blue" />
+                <KpiCard icon={<DollarSign className="text-green-600" size={24} />} title="Ingresos Hoy" value={`$${formatCLP(todayRevenue)}`} sub="+8% vs ayer" color="green" />
+                <KpiCard icon={<TrendingUp className="text-purple-600" size={24} />} title="Ticket Promedio" value={`$${formatCLP(avgOrderValue)}`} sub="+5% vs ayer" color="purple" />
+                <KpiCard icon={<Clock className="text-orange-600" size={24} />} title="En Cocina" value={cooking} sub="Activos" color="orange" />
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <StatusCard
-                  title="📋 Pendientes"
-                  value={pending}
-                  barColor="yellow"
-                />
-                <StatusCard
-                  title="👨‍🍳 En Cocina"
-                  value={cooking}
-                  barColor="orange"
-                />
+                <StatusCard title="📋 Pendientes" value={pending} barColor="yellow" />
+                <StatusCard title="👨‍🍳 En Cocina" value={cooking} barColor="orange" />
                 <StatusCard title="✅ Listos" value={ready} barColor="green" />
               </div>
             </div>
@@ -1147,11 +1026,7 @@ const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
 
           {/* Promociones */}
           {activeTab === "promotions" && (
-            <PromotionsGrid
-              onAddToCart={addToCart}
-              onAddToCartDetailed={addToCartDetailed}
-              onAfterConfirm={goToCreateOrder}
-            />
+            <PromotionsGrid onAddToCart={addToCart} onAddToCartDetailed={addToCartDetailed} onAfterConfirm={goToCreateOrder} />
           )}
 
           {/* Carrito */}
@@ -1173,10 +1048,7 @@ const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
                 if (hasMin) createOrder();
                 else {
                   setActiveTab("customer");
-                  notify(
-                    "info",
-                    "Completa los datos del cliente para continuar"
-                  );
+                  notify("info", "Completa los datos del cliente para continuar");
                 }
               }}
             />
@@ -1198,12 +1070,11 @@ const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
                     city: c.city || "Puerto Montt",
                     references: c.references || "",
                   }));
-                  // Crear pedido inmediatamente. Si prefieres confirmar, cambia por setActiveTab("cart")
+                  // Crear pedido inmediatamente (si prefieres confirmar: setActiveTab("cart"))
                   createOrder();
                 }}
               />
             ) : (
-              // Fallback: si no hay clientes en store, usa el formulario clásico
               <CustomerForm
                 customerData={customerData}
                 onCustomerDataChange={setCustomerData}
@@ -1220,10 +1091,7 @@ const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
                     city: c?.city ?? prev.city ?? "Puerto Montt",
                     references: c?.references ?? prev.references ?? "",
                   }));
-                  notify(
-                    "info",
-                    `Cliente ${c?.name ?? "Sin nombre"} seleccionado`
-                  );
+                  notify("info", `Cliente ${c?.name ?? "Sin nombre"} seleccionado`);
                 }}
                 cart={cart}
                 cartTotal={cartTotal}
@@ -1246,18 +1114,11 @@ const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
                 </div>
               ) : (
                 displayedOrders.map((o) => (
-                  <div
-                    key={o.id}
-                    className="bg-white p-4 rounded-xl border border-gray-200 hover:shadow-sm transition"
-                  >
+                  <div key={o.id} className="bg-white p-4 rounded-xl border border-gray-200 hover:shadow-sm transition">
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="text-sm text-gray-500">
-                          #{o.publicCode} • {o.status.toUpperCase()}
-                        </p>
-                        <p className="font-semibold text-gray-900">
-                          {o.name} — {o.phone}
-                        </p>
+                        <p className="text-sm text-gray-500">#{o.publicCode} • {o.status.toUpperCase()}</p>
+                        <p className="font-semibold text-gray-900">{o.name} — {o.phone}</p>
                         <p className="text-sm text-gray-600">{o.address}</p>
                       </div>
                       <div className="flex items-center gap-3">
@@ -1272,12 +1133,8 @@ const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
                           <Eye size={16} /> Detalle
                         </button>
                         <div className="text-right">
-                          <p className="text-xl font-bold text-rose-600">
-                            ${formatCLP(o.total)}
-                          </p>
-                          <p className="text-xs text-gray-500">
-                            ⏱️ {o.estimatedTime} min • {timeAgo(o.createdAt)}
-                          </p>
+                          <p className="text-xl font-bold text-rose-600">${formatCLP(o.total)}</p>
+                          <p className="text-xs text-gray-500">⏱️ {o.estimatedTime} min • {timeAgo(o.createdAt)}</p>
                         </div>
                       </div>
                     </div>
@@ -1289,11 +1146,7 @@ const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
         </div>
       </div>
 
-      <OrderDetailModal
-        open={showDetail}
-        onClose={() => setShowDetail(false)}
-        order={selectedOrder}
-      />
+      <OrderDetailModal open={showDetail} onClose={() => setShowDetail(false)} order={selectedOrder} />
     </div>
   );
 };
@@ -1306,33 +1159,16 @@ const KpiCard: React.FC<{
   sub?: string;
   color: "blue" | "green" | "purple" | "orange";
 }> = ({ icon, title, value, sub, color }) => {
-  const bg = {
-    blue: "bg-blue-100",
-    green: "bg-green-100",
-    purple: "bg-purple-100",
-    orange: "bg-orange-100",
-  }[color];
+  const bg = { blue: "bg-blue-100", green: "bg-green-100", purple: "bg-purple-100", orange: "bg-orange-100" }[color];
   return (
     <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition">
       <div className="flex items-center justify-between">
         <div>
           <p className="text-gray-600 text-sm">{title}</p>
           <p className="text-3xl font-bold text-gray-900">{value}</p>
-          {sub && (
-            <p
-              className={`text-sm ${
-                color === "green" ? "text-green-600" : "text-gray-500"
-              }`}
-            >
-              ↗ {sub}
-            </p>
-          )}
+          {sub && <p className={`text-sm ${color === "green" ? "text-green-600" : "text-gray-500"}`}>↗ {sub}</p>}
         </div>
-        <div
-          className={`w-12 h-12 ${bg} rounded-xl flex items-center justify-center`}
-        >
-          {icon}
-        </div>
+        <div className={`w-12 h-12 ${bg} rounded-xl flex items-center justify-center`}>{icon}</div>
       </div>
     </div>
   );
@@ -1342,34 +1178,19 @@ const StatusCard: React.FC<{
   value: number;
   barColor: "yellow" | "orange" | "green";
 }> = ({ title, value, barColor }) => {
-  const bg = {
-    yellow: "bg-yellow-200",
-    orange: "bg-orange-200",
-    green: "bg-green-200",
-  }[barColor];
-  const bar = {
-    yellow: "bg-yellow-500",
-    orange: "bg-orange-500",
-    green: "bg-green-500",
-  }[barColor];
+  const bg = { yellow: "bg-yellow-200", orange: "bg-orange-200", green: "bg-green-200" }[barColor];
+  const bar = { yellow: "bg-yellow-500", orange: "bg-orange-500", green: "bg-green-500" }[barColor];
   return (
-    <div
-      className={`bg-gradient-to-br from-${barColor}-50 to-${barColor}-100 border border-${barColor}-200 rounded-xl p-6 hover:shadow-lg transition`}
-    >
+    <div className={`bg-gradient-to-br from-${barColor}-50 to-${barColor}-100 border border-${barColor}-200 rounded-xl p-6 hover:shadow-lg transition`}>
       <div className="flex items-center justify-between mb-4">
         <h4 className={`font-semibold text-${barColor}-800`}>{title}</h4>
-        <div
-          className={`w-8 h-8 ${bg} rounded-lg flex items-center justify-center`}
-        >
+        <div className={`w-8 h-8 ${bg} rounded-lg flex items-center justify-center`}>
           <Clock size={16} className={`text-${barColor}-700`} />
         </div>
       </div>
       <p className={`text-3xl font-bold text-${barColor}-700 mb-2`}>{value}</p>
       <div className={`w-full ${bg} rounded-full h-2`}>
-        <div
-          className={`${bar} h-2 rounded-full`}
-          style={{ width: `${Math.min(value * 25, 100)}%` }}
-        />
+        <div className={`${bar} h-2 rounded-full`} style={{ width: `${Math.min(value * 25, 100)}%` }} />
       </div>
     </div>
   );

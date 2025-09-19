@@ -1,55 +1,105 @@
-// Core types
-export type UserRole = 'cashier' | 'cook' | 'delivery' | 'client';
-export type PaymentMethod = 'debito' | 'credito' | 'efectivo' | 'transferencia' | 'otro';
-export type PaymentStatus = 'paid' | 'due';
-export type OrderStatus = 'pending' | 'cooking' | 'ready' | 'delivered';
-export type GeocodePrecision = 'exact' | 'road' | 'fallback' | 'unknown';
+// src/types/index.ts
 
-// Coordinate interface
+/* =========================
+   Catálogo / Ítems de carrito
+   ========================= */
+export interface CartItem {
+  id: number;
+  name: string;
+  description: string;
+  items: string[];
+  originalPrice: number;
+  discountPrice: number;
+  discount: number;
+  image: string;
+  popular: boolean;
+  cookingTime: number;
+  quantity: number;
+}
+
+/* =========================
+   Coordenadas / Ruta
+   ========================= */
 export interface Coordinates {
   lat: number;
   lng: number;
 }
 
-// Promotion interface
-export interface Promotion {
-  id: number;
-  name: string;
-  description: string;
-  items: string[];
-  discountPrice: number;
-  originalPrice: number;
-  discount: number;
-  image: string;
-  cookingTime: number;
-  popular?: boolean;
+export interface RouteMeta {
+  distance?: number; // metros
+  duration?: number; // segundos
+  points?: [number, number][]; // [lat, lng]
 }
 
-// Cart item extends promotion with quantity
-export interface CartItem extends Promotion {
-  quantity: number;
-}
+/* =========================
+   Pagos y estados
+   ========================= */
+export type PaymentMethod =
+  | "efectivo"
+  | "debito"
+  | "credito"
+  | "transferencia"
+  | "mp";
 
-// Customer interface
-export interface Customer {
+export type PaymentStatus = "paid" | "pending" | "unpaid";
+
+export type OrderStatus = "pending" | "cooking" | "ready" | "delivered";
+
+export type GeocodePrecision = "exact" | "approx" | "none";
+
+/* =========================
+   Cliente (form)
+   ========================= */
+export interface CustomerFormData {
   name: string;
   phone: string;
   street: string;
   number: string;
-  sector?: string;
+  sector: string;
   city: string;
-  references?: string;
-  coordinates?: Coordinates;
+  references: string;
+  paymentMethod: PaymentMethod;
+  paymentStatus: PaymentStatus;
+  dueMethod: PaymentMethod;
+  mpChannel?: "delivery" | "local";
 }
 
-// Route metadata for OSRM
-export interface RouteMeta {
-  distance: number;
-  duration: number;
-  points?: [number, number][];
+/* =========================
+   Extras / Meta de la orden
+   ========================= */
+export type ServiceType = "delivery" | "local";
+
+export interface ChangeLine {
+  from?: string; // 'pollo' | 'salmon' | ...
+  to?: string;
+  fee: number;
 }
 
-// Order interface
+export interface SauceLine {
+  qty: number;
+  included?: number;
+  extraFee?: number;
+  feeTotal?: number;
+}
+
+export interface OrderMeta {
+  service: ServiceType;
+  deliveryZone?: string;
+  deliveryFee?: number;
+  chopsticks?: number;
+  changes?: ChangeLine[];
+  soy?: SauceLine;
+  ginger?: SauceLine;
+  wasabi?: SauceLine;
+  agridulce?: SauceLine;
+  acevichada?: SauceLine;
+  extrasTotal?: number;
+  note?: string;
+}
+
+/* =========================
+   Orden
+   ========================= */
 export interface Order {
   id: number;
   publicCode: string;
@@ -77,51 +127,7 @@ export interface Order {
   packUntil: number | null;
   packed: boolean;
   paidAt?: string;
-}
 
-// Geocoding result
-export interface GeocodeResult {
-  lat: number;
-  lng: number;
-  precision: GeocodePrecision;
-  matchedNumber?: boolean;
-}
-
-// Form validation errors
-export interface FormErrors {
-  [key: string]: string;
-}
-
-// Dashboard statistics
-export interface DashboardStats {
-  total: number;
-  byStatus: Record<OrderStatus, number>;
-  due: number;
-  deliveredCount: number;
-  topClients: Array<{
-    name: string;
-    phone: string;
-    total: number;
-    count: number;
-  }>;
-}
-
-// Progress info for client tracking
-export interface ProgressInfo {
-  pct: number;
-  label: string;
-}
-
-// Customer form data
-export interface CustomerFormData {
-  name: string;
-  phone: string;
-  street: string;
-  number: string;
-  sector: string;
-  city: string;
-  references: string;
-  paymentMethod: PaymentMethod;
-  paymentStatus: PaymentStatus;
-  dueMethod: PaymentMethod;
+  // ✅ NUEVO: extras (delivery/cambios/salsas, etc.)
+  meta?: OrderMeta;
 }
