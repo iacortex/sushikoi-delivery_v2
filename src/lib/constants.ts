@@ -1,73 +1,63 @@
-    import type { Coordinates, PaymentMethod } from '@/types';
+// src/lib/constants.ts
 
-// Origin restaurant location (fixed)
-export const ORIGIN: Coordinates & { name: string } = {
-  lat: -41.46619826299714,
-  lng: -72.99901571534275,
-  name: "Sushikoi — Av. Capitán Ávalos 6130, Puerto Montt, Chile",
+/** SSR-safe */
+export const isBrowser =
+  typeof window !== "undefined" && typeof document !== "undefined";
+
+/** Lee número desde env Vite */
+const readEnvNum = (key: string): number | undefined => {
+  const v = (import.meta as any)?.env?.[key];
+  const n = Number(v);
+  return Number.isFinite(n) ? n : undefined;
 };
 
-// Viewbox for Puerto Montt area (for Nominatim geocoding)
-export const PUERTO_MONTT_VIEWBOX = "-73.2,-41.7,-72.7,-41.3";
+/** ORIGIN por defecto (Santiago) + ENV override */
+const defaultLat = readEnvNum("VITE_ORIGIN_LAT") ?? -33.4489;
+const defaultLng = readEnvNum("VITE_ORIGIN_LNG") ?? -70.6693;
 
-// Payment methods configuration
-export const PAYMENT_METHODS: Array<{ value: PaymentMethod; label: string }> = [
-  { value: "debito", label: "Débito" },
-  { value: "credito", label: "Crédito" },
-  { value: "efectivo", label: "Efectivo" },
-  { value: "transferencia", label: "Transferencia" },
-  { value: "otro", label: "Otro" },
-];
+let ORIGIN_OVERRIDE: { lat: number; lng: number } | null = null;
 
-// Chilean cities supported
-export const CITIES = [
-  "Puerto Montt",
-  "Puerto Varas", 
-  "Osorno",
-  "Frutillar",
-  "Llanquihue",
-  "Ancud",
-  "Castro"
-];
+/** Punto de origen accesible en runtime (con override opcional) */
+export const ORIGIN = new Proxy(
+  { lat: defaultLat, lng: defaultLng },
+  {
+    get(_t, prop: "lat" | "lng") {
+      if (ORIGIN_OVERRIDE) return ORIGIN_OVERRIDE[prop];
+      return prop === "lat" ? defaultLat : defaultLng;
+    },
+  }
+) as { readonly lat: number; readonly lng: number };
 
-// Order status configuration
-export const ORDER_STATUS_CONFIG = {
-  pending: { 
-    label: "Pendiente", 
-    color: "bg-yellow-100 text-yellow-800",
-    progressRange: [0, 50] 
-  },
-  cooking: { 
-    label: "En Cocina", 
-    color: "bg-orange-100 text-orange-800",
-    progressRange: [50, 90]
-  },
-  ready: { 
-    label: "Listo para Delivery", 
-    color: "bg-green-100 text-green-800",
-    progressRange: [90, 100]
-  },
-  delivered: { 
-    label: "Entregado", 
-    color: "bg-blue-100 text-blue-800",
-    progressRange: [100, 100]
-  },
-} as const;
+export function setOriginOverride(lat: number, lng: number) {
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+  ORIGIN_OVERRIDE = { lat, lng };
+}
+export function clearOriginOverride() {
+  ORIGIN_OVERRIDE = null;
+}
 
-// Packing time for ready orders (90 seconds)
-export const PACKING_TIME_MS = 90_000;
+/** Base para tracking cuando no hay window (SSR/tests) */
+export const TRACKING_FALLBACK_BASE =
+  (import.meta as any)?.env?.VITE_TRACKING_BASE ?? "https://track.local";
 
-// Debounce delay for geocoding
-export const GEOCODING_DEBOUNCE_MS = 700;
+/**
+ * Config QR (tipado ANCHO para evitar literales 220/140)
+ * → así puedes pasar 120, 180, etc. sin error de TS.
+ */
+export const QR_DEFAULTS: { wazeSize: number; trackingSize: number } = {
+  wazeSize: 220,
+  trackingSize: 140,
+};
 
-// Ticker interval for real-time updates
-export const TICKER_INTERVAL_MS = 1000;
-
-// Local storage keys
-export const STORAGE_KEYS = {
-  ORDERS: 'sushi_orders',
-  CUSTOMERS: 'sushi_customers',
-} as const;
-
-// Chilean phone regex
-export const CHILEAN_PHONE_REGEX = /^\+?56\s?9\s?[\d\s-]{7,9}$/;
+/** Badges/labels por estado de orden (usado por DeliveryOrderCard) */
+export const ORDER_STATUS_CONFIG: Record<
+  string,
+  { label: string; color: string }
+> = {
+  pending: { label: "Pendiente", color: "bg-gray-100 text-gray-700" },
+  cooking: { label: "En cocina", color: "bg-orange-100 text-orange-700" },
+  ready: { label: "Listo para retiro", color: "bg-amber-100 text-amber-800" },
+  on_route: { label: "En ruta", color: "bg-blue-100 text-blue-700" },
+  delivered: { label: "Entregado", color: "bg-emerald-100 text-emerald-700" },
+  cancelled: { label: "Cancelado", color: "bg-red-100 text-red-700" },
+};

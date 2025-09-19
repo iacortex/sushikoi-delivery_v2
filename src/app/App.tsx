@@ -1,31 +1,50 @@
-import { useState } from 'react';
-import type { UserRole } from '@/types';
-import { useTicker } from '@/hooks/useTicker';
-import { useOrders } from '@/features/orders/useOrders';
-import { useCustomers } from '@/features/customers/useCustomers';
+// src/app/App.tsx
+import { useEffect, useState } from "react";
+import type { UserRole } from "@/types";
+import { useTicker } from "@/hooks/useTicker";
+import { useOrders } from "@/features/orders/useOrders";
+import { useCustomers } from "@/features/customers/useCustomers";
 
 // Layout
-import { Header } from '@/components/layout/Header';
-import { RoleSelector } from '@/components/layout/RoleSelector';
-import OrientalBackground from '@/components/layout/OrientalBackground';
+import { Header } from "@/components/layout/Header";
+import { RoleSelector } from "@/components/layout/RoleSelector";
+import OrientalBackground from "@/components/layout/OrientalBackground";
 
 // Dashboard
-import { Dashboard } from '@/components/dashboard/Dashboard';
+import { Dashboard } from "@/components/dashboard/Dashboard";
 
 // Role-specific
-import CashierPanel from '@/components/cashier/CashierPanel';
-import { CookBoard } from '@/components/cook/CookBoard';
-import { KitchenNotifications } from '@/components/cook/KitchenNotificacions';
+import CashierPanel from "@/components/cashier/CashierPanel";
+import { CookBoard } from "@/components/cook/CookBoard";
+// ⚠️ el archivo real se llama KitchenNotificacions.tsx
+//    lo aliaseamos a KitchenNotifications para mantener el resto del código igual
+import { KitchenNotifications } from "@/components/cook/KitchenNotificacions";
+import DeliveryPanel from "@/components/delivery/DeliveryPanel"; // ⬅️ nuevo
 
 export function App() {
   useTicker();
 
-  const [userRole, setUserRole] = useState<UserRole>('cashier');
+  // 🔐 Persistimos el rol en localStorage (arranca con lo último usado)
+  const [userRole, setUserRole] = useState<UserRole>(() => {
+    try {
+      const saved = localStorage.getItem("koi_role") as UserRole | null;
+      return (saved as UserRole) || "cashier";
+    } catch {
+      return "cashier";
+    }
+  });
   const [showDashboard, setShowDashboard] = useState(false);
 
   // ✅ Instancia ÚNICA del estado de órdenes
   const orders = useOrders();
   const customers = useCustomers();
+
+  // Guarda cambio de rol
+  useEffect(() => {
+    try {
+      localStorage.setItem("koi_role", userRole);
+    } catch {}
+  }, [userRole]);
 
   const handleRoleChange = (role: UserRole) => {
     setUserRole(role);
@@ -35,16 +54,16 @@ export function App() {
 
   // 🔔 al crear una orden, ir a cocina
   const handleOrderCreated = () => {
-    setUserRole('cook');
+    setUserRole("cook");
     setShowDashboard(false);
   };
 
   const getRoleTitle = (): string => {
     const titles = {
-      cashier: '🏪 Panel de Cajero/Vendedor',
-      cook: '👨‍🍳 Panel de Cocinero',
-      delivery: '🛵 Panel de Delivery',
-      client: '🙋 Panel de Cliente',
+      cashier: "🏪 Panel de Cajero/Vendedor",
+      cook: "👨‍🍳 Panel de Cocinero",
+      delivery: "🛵 Panel de Delivery",
+      client: "🙋 Panel de Cliente",
     } as const;
     return titles[userRole];
   };
@@ -69,7 +88,7 @@ export function App() {
           <Dashboard orders={orders.orders} />
         ) : (
           <div>
-            {userRole === 'cashier' && (
+            {userRole === "cashier" && (
               <div className="w-full">
                 <CashierPanel
                   ordersApi={orders}
@@ -78,7 +97,7 @@ export function App() {
               </div>
             )}
 
-            {userRole === 'cook' && (
+            {userRole === "cook" && (
               <div className="w-full space-y-4">
                 <div className="section-header flex items-center justify-between">
                   <h2 className="section-title">{getRoleTitle()}</h2>
@@ -89,21 +108,18 @@ export function App() {
               </div>
             )}
 
-            {userRole === 'delivery' && (
-              <div>
+            {userRole === "delivery" && (
+              <div className="w-full space-y-4">
                 <div className="section-header">
                   <h2 className="section-title">{getRoleTitle()}</h2>
                 </div>
-                <div className="p-4 koi-panel">
-                  <p>Panel de Delivery - En desarrollo</p>
-                  <p className="text-sm text-gray-600 mt-2">
-                    Próximamente: Lista de entregas, mapas de rutas, estado GPS
-                  </p>
-                </div>
+                {/* ⬇️ DeliveryPanel NO acepta props: lo usamos sin ordersApi */}
+                <DeliveryPanel />
+                {/* Si más adelante quieres que reciba la instancia, expórtalo con props y aquí la pasamos */}
               </div>
             )}
 
-            {userRole === 'client' && (
+            {userRole === "client" && (
               <div>
                 <div className="section-header">
                   <h2 className="section-title">{getRoleTitle()}</h2>
@@ -111,7 +127,8 @@ export function App() {
                 <div className="p-4 koi-panel">
                   <p>Panel de Cliente - En desarrollo</p>
                   <p className="text-sm text-gray-600 mt-2">
-                    Próximamente: Seguimiento de pedidos, modo tótem, QR tracking
+                    Próximamente: Seguimiento de pedidos, modo tótem, QR
+                    tracking
                   </p>
                 </div>
               </div>
@@ -119,38 +136,46 @@ export function App() {
           </div>
         )}
 
-        {import.meta.env.DEV && userRole !== 'cashier' && (
+        {import.meta.env.DEV && userRole !== "cashier" && (
           <div className="mt-8 p-4 bg-gray-100 rounded-lg text-sm text-gray-600">
             <h4 className="font-semibold mb-2">Debug Info:</h4>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <p><strong>Role:</strong> {userRole}</p>
-                <p><strong>Dashboard:</strong> {showDashboard ? 'visible' : 'hidden'}</p>
+                <p>
+                  <strong>Role:</strong> {userRole}
+                </p>
+                <p>
+                  <strong>Dashboard:</strong> {showDashboard ? "visible" : "hidden"}
+                </p>
               </div>
               <div>
-                <p><strong>Orders:</strong> {orders.orders.length}</p>
-                <p><strong>Customers:</strong> {customers.customers.length}</p>
+                <p>
+                  <strong>Orders:</strong> {orders.orders.length}
+                </p>
+                <p>
+                  <strong>Customers:</strong> {customers.customers.length}
+                </p>
               </div>
             </div>
             <div className="mt-4 pt-4 border-t border-gray-300">
               <h5 className="font-medium mb-2">Quick Stats:</h5>
               <div className="flex gap-4 text-xs">
                 <span className="bg-yellow-100 px-2 py-1 rounded">
-                  Pending: {orders.orders.filter(o => o.status === 'pending').length}
+                  Pending: {orders.orders.filter((o) => o.status === "pending").length}
                 </span>
                 <span className="bg-orange-100 px-2 py-1 rounded">
-                  Cooking: {orders.orders.filter(o => o.status === 'cooking').length}
+                  Cooking: {orders.orders.filter((o) => o.status === "cooking").length}
                 </span>
                 <span className="bg-green-100 px-2 py-1 rounded">
-                  Ready: {orders.orders.filter(o => o.status === 'ready').length}
+                  Ready: {orders.orders.filter((o) => o.status === "ready").length}
                 </span>
                 <span className="bg-blue-100 px-2 py-1 rounded">
-                  Delivered: {orders.orders.filter(o => o.status === 'delivered').length}
+                  Delivered: {orders.orders.filter((o) => o.status === "delivered").length}
                 </span>
               </div>
             </div>
             <div className="mt-2 text-xs text-gray-500">
-              <p>Last update: {new Date().toLocaleTimeString('es-CL')}</p>
+              <p>Last update: {new Date().toLocaleTimeString("es-CL")}</p>
               <p>Environment: {import.meta.env.MODE}</p>
             </div>
           </div>

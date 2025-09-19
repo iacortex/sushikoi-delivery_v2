@@ -1,4 +1,7 @@
-// src/types/index.ts
+/* =========================
+   Roles
+   ========================= */
+export type UserRole = "cashier" | "cook" | "delivery" | "client";
 
 /* =========================
    Catálogo / Ítems de carrito
@@ -26,8 +29,8 @@ export interface Coordinates {
 }
 
 export interface RouteMeta {
-  distance?: number; // metros
-  duration?: number; // segundos
+  distance?: number;           // metros
+  duration?: number;           // segundos
   points?: [number, number][]; // [lat, lng]
 }
 
@@ -41,9 +44,22 @@ export type PaymentMethod =
   | "transferencia"
   | "mp";
 
-export type PaymentStatus = "paid" | "pending" | "unpaid";
+/** Ampliado para UI Delivery */
+export type PaymentStatus =
+  | "paid"
+  | "pending"
+  | "unpaid"
+  | "due"
+  | "refunded";
 
-export type OrderStatus = "pending" | "cooking" | "ready" | "delivered";
+/** Ampliado con 'on_route' y 'cancelled' */
+export type OrderStatus =
+  | "pending"
+  | "cooking"
+  | "ready"
+  | "on_route"
+  | "delivered"
+  | "cancelled";
 
 export type GeocodePrecision = "exact" | "approx" | "none";
 
@@ -65,12 +81,12 @@ export interface CustomerFormData {
 }
 
 /* =========================
-   Extras / Meta de la orden
+   Extras / Meta
    ========================= */
 export type ServiceType = "delivery" | "local";
 
 export interface ChangeLine {
-  from?: string; // 'pollo' | 'salmon' | ...
+  from?: string;
   to?: string;
   fee: number;
 }
@@ -103,31 +119,47 @@ export interface OrderMeta {
 export interface Order {
   id: number;
   publicCode: string;
+
   name: string;
   phone: string;
+
   address: string;
   city: string;
   references?: string;
+
   cart: CartItem[];
   total: number;
+
   coordinates: Coordinates;
   mapsUrl: string;
   wazeUrl: string;
+
+  /** Servicio (opcional; por compatibilidad se asume delivery si no viene) */
+  service?: ServiceType;
+
   status: OrderStatus;
   timestamp: string;
   createdAt: number;
   cookingAt: number | null;
+  readyAt?: number | null;
+  pickupAt?: number | null;
+  deliveredAt?: number | null;
+
   estimatedTime: number;
   routeMeta?: RouteMeta | null;
+
   createdBy: string;
   geocodePrecision: GeocodePrecision;
+
   paymentMethod: PaymentMethod;
   paymentStatus: PaymentStatus;
   dueMethod?: PaymentMethod;
+  paidAt?: number | string | null;
+
   packUntil: number | null;
   packed: boolean;
-  paidAt?: string;
 
-  // ✅ NUEVO: extras (delivery/cambios/salsas, etc.)
+  driver?: { name: string; phone?: string } | null;
+
   meta?: OrderMeta;
 }

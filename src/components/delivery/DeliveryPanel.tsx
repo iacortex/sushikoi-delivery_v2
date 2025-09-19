@@ -1,268 +1,234 @@
-import React, { useMemo, useState } from 'react';
-import { Truck, Package, CheckCircle, MapPin, Clock, DollarSign } from 'lucide-react';
-import type { Order } from '@/types';
-import { useOrders } from '@/features/orders/useOrders';
-import { useTicker } from '@/hooks/useTicker';
-import { DeliveryOrderCard } from './DeliveryOrderCard';
-import { DeliveryStats } from './DeliveryStats';
-import { ORDER_STATUS_CONFIG } from '@/lib/constants';
+// src/components/delivery/DeliveryPanel.tsx
+import React, { useMemo, useState } from "react";
+import { useOrders } from "@/features/orders/useOrders";
+import { DeliveryOrderCard } from "./DeliveryOrderCard";
+import { Search, RefreshCw } from "lucide-react";
+import { TabNavigation } from "@/components/layout/TabNavigation"; // ⬅️ export nombrado
+import type { Order } from "@/types";
 
-type DeliveryFilter = 'all' | 'ready' | 'delivered' | 'unpaid';
+/* ================= Utils ================= */
+const isToday = (ts?: number | null) => {
+  if (!ts) return false;
+  const d = new Date(ts);
+  const now = new Date();
+  return (
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate()
+  );
+};
 
-export const DeliveryPanel: React.FC = () => {
-  // Real-time updates
-  useTicker();
-  
-  // State
-  const [activeFilter, setActiveFilter] = useState<DeliveryFilter>('ready');
-  
-  // Orders management
-  const { orders, updateOrderStatus, confirmPayment } = useOrders();
+const fmtMin = (ms: number) => {
+  const m = Math.round(ms / 60000);
+  if (m < 60) return `${m} min`;
+  const h = Math.floor(m / 60);
+  const r = m % 60;
+  return `${h} h ${r} min`;
+};
 
-  // Filter orders for delivery (ready + delivered)
-  const deliveryOrders = useMemo(() => {
-    return orders.filter(order => 
-      ['ready', 'delivered'].includes(order.status)
+const CardStat: React.FC<{ label: string; value: string }> = ({ label, value }) => (
+  <div className="rounded-xl border bg-white/70 p-3">
+    <div className="text-xs text-gray-600">{label}</div>
+    <div className="text-lg font-semibold text-gray-900">{value}</div>
+  </div>
+);
+
+/* ========================================= */
+
+const DeliveryPanel: React.FC = () => {
+  const { orders, assignDriver, startRoute, markDelivered } = useOrders();
+  const [query, setQuery] = useState("");
+  const [tab, setTab] = useState<"ready" | "on_route" | "delivered_today">("ready");
+
+  // Colecciones base
+  const deliveryOrders: Order[] = useMemo(
+    () => orders.filter((o: Order) => o.service === "delivery"),
+    [orders]
+  );
+
+  // Filtro por búsqueda (solo aplica a ready/on_route)
+  const searchable = useMemo(
+    () => deliveryOrders.filter((o: Order) => o.status === "ready" || o.status === "on_route"),
+    [deliveryOrders]
+  );
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return searchable;
+    return searchable.filter((o: Order) =>
+      (o.publicCode || "").toLowerCase().includes(q) ||
+      (o.name || "").toLowerCase().includes(q) ||
+      (o.address || "").toLowerCase().includes(q) ||
+      (o.driver?.name || "").toLowerCase().includes(q)
     );
-  }, [orders]);
+  }, [query, searchable]);
 
-  // Apply filters
-  const filteredOrders = useMemo(() => {
-    switch (activeFilter) {
-      case 'ready':
-        return deliveryOrders.filter(order => order.status === 'ready');
-      case 'delivered':
-        return deliveryOrders.filter(order => order.status === 'delivered');
-      case 'unpaid':
-        return deliveryOrders.filter(order => order.paymentStatus === 'due');
-      default:
-        return deliveryOrders;
+  const ready: Order[] = filtered.filter((o: Order) => o.status === "ready");
+  const onRoute: Order[] = filtered.filter((o: Order) => o.status === "on_route");
+
+  // Entregados hoy (para métricas)
+  const deliveredToday: Order[] = useMemo(
+    () => deliveryOrders.filter((o: Order) => o.status === "delivered" && isToday((o as any).deliveredAt)),
+    [deliveryOrders]
+  );
+
+  const metrics = useMemo(() => {
+    if (deliveredToday.length === 0) {
+      return { count: 0, avgRouteTimeMs: 0, totalKm: 0, avgKm: 0 };
     }
-  }, [deliveryOrders, activeFilter]);
+    let sumTime = 0;
+    let sumKm = 0;
+    let countWithTime = 0;
+    let countWithKm = 0;
 
-  // Sort orders - ready first, then by creation time
-  const sortedOrders = useMemo(() => {
-    return [...filteredOrders].sort((a, b) => {
-      // Ready orders first
-      if (a.status === 'ready' && b.status !== 'ready') return -1;
-      if (b.status === 'ready' && a.status !== 'ready') return 1;
-      
-      // Then by creation time (newest first)
-      return b.createdAt - a.createdAt;
-    });
-  }, [filteredOrders]);
+    for (const o of deliveredToday) {
+      const pickupAt = (o as any).pickupAt as number | undefined;
+      const deliveredAt = (o as any).deliveredAt as number | undefined;
+      if (pickupAt && deliveredAt && deliveredAt >= pickupAt) {
+        sumTime += deliveredAt - pickupAt;
+        countWithTime++;
+      }
+      const d = (o.routeMeta as any)?.distance as number | undefined;
+      if (typeof d === "number" && d >= 0) {
+        sumKm += d;
+        countWithKm++;
+      }
+    }
 
-  // Statistics
-  const stats = useMemo(() => {
-    const ready = deliveryOrders.filter(o => o.status === 'ready').length;
-    const delivered = deliveryOrders.filter(o => o.status === 'delivered').length;
-    const unpaid = deliveryOrders.filter(o => o.paymentStatus === 'due').length;
-    
-    // Today's deliveries
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const todayDelivered = deliveryOrders.filter(o => 
-      o.status === 'delivered' && o.createdAt >= today.getTime()
-    ).length;
+    const avgRouteTimeMs = countWithTime ? sumTime / countWithTime : 0;
+    const totalKm = sumKm / 1000;
+    const avgKm = countWithKm ? (sumKm / countWithKm) / 1000 : 0;
 
-    // Calculate total revenue from delivered orders today
-    const todayRevenue = deliveryOrders
-      .filter(o => o.status === 'delivered' && o.createdAt >= today.getTime())
-      .reduce((sum, o) => sum + o.total, 0);
-
-    return {
-      ready,
-      delivered,
-      unpaid,
-      todayDelivered,
-      todayRevenue,
-      total: deliveryOrders.length,
-    };
-  }, [deliveryOrders]);
-
-  // Handle order actions
-  const handleMarkAsDelivered = (orderId: number) => {
-    updateOrderStatus(orderId, 'delivered');
-  };
-
-  const handleConfirmPayment = (orderId: number) => {
-    confirmPayment(orderId);
-  };
-
-  // Filter configuration
-  const filters = [
-    {
-      key: 'ready' as const,
-      label: 'Para Entregar',
-      icon: Package,
-      count: stats.ready,
-      color: 'bg-green-500',
-    },
-    {
-      key: 'delivered' as const,
-      label: 'Entregados',
-      icon: CheckCircle,
-      count: stats.delivered,
-      color: 'bg-blue-500',
-    },
-    {
-      key: 'unpaid' as const,
-      label: 'Por Cobrar',
-      icon: DollarSign,
-      count: stats.unpaid,
-      color: 'bg-red-500',
-    },
-    {
-      key: 'all' as const,
-      label: 'Todos',
-      icon: Truck,
-      count: stats.total,
-      color: 'bg-gray-500',
-    },
-  ];
-
-  if (deliveryOrders.length === 0) {
-    return (
-      <div className="max-w-4xl mx-auto">
-        <EmptyDelivery />
-      </div>
-    );
-  }
+    return { count: deliveredToday.length, avgRouteTimeMs, totalKm, avgKm };
+  }, [deliveredToday]);
 
   return (
-    <div className="max-w-7xl mx-auto space-y-6">
-      {/* Delivery Statistics */}
-      <DeliveryStats stats={stats} />
-
-      {/* Filter Tabs */}
-      <div className="card">
-        <div className="card-body">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
-              <Truck className="text-green-500" />
-              Gestión de Entregas
-            </h2>
-            
-            {/* Active Orders Count */}
-            <div className="text-sm text-gray-600">
-              Mostrando {sortedOrders.length} de {deliveryOrders.length} pedidos
-            </div>
-          </div>
-
-          {/* Filter Buttons */}
-          <div className="flex flex-wrap gap-2">
-            {filters.map((filter) => {
-              const Icon = filter.icon;
-              const isActive = activeFilter === filter.key;
-              
-              return (
-                <button
-                  key={filter.key}
-                  onClick={() => setActiveFilter(filter.key)}
-                  className={`
-                    flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all duration-200
-                    ${isActive 
-                      ? `${filter.color} text-white shadow-lg transform scale-105` 
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200 hover:shadow-md'
-                    }
-                  `}
-                  aria-pressed={isActive}
-                >
-                  <Icon size={16} />
-                  <span>{filter.label}</span>
-                  <span className={`
-                    px-2 py-0.5 rounded-full text-xs font-bold min-w-[20px] text-center
-                    ${isActive ? 'bg-white/20' : filter.color + ' text-white'}
-                  `}>
-                    {filter.count}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
+    <div className="p-3 md:p-4 space-y-3">
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-semibold">Panel Delivery</h2>
+        <button
+          className="h-9 px-3 rounded-lg border bg-white hover:bg-gray-50 flex items-center gap-2"
+          onClick={() => window.location.reload()}
+        >
+          <RefreshCw size={16} /> Actualizar
+        </button>
       </div>
 
-      {/* Orders List or Route Optimizer */}
-      <div className="space-y-6">
-        {activeFilter === 'optimize' ? (
-          <RouteOptimizer orders={deliveryOrders} />
-        ) : (
-          <>
-            {sortedOrders.length === 0 ? (
-              <div className="card">
-                <div className="card-body">
-                  <div className="text-center py-8">
-                    <Package size={48} className="mx-auto mb-4 text-gray-300" />
-                    <h3 className="text-lg font-semibold text-gray-600 mb-2">
-                      No hay pedidos en esta categoría
-                    </h3>
-                    <p className="text-gray-500">
-                      {activeFilter === 'ready' && 'Los pedidos listos aparecerán aquí automáticamente'}
-                      {activeFilter === 'delivered' && 'Los pedidos entregados aparecerán aquí'}
-                      {activeFilter === 'unpaid' && 'Los pedidos por cobrar aparecerán aquí'}
-                      {activeFilter === 'all' && 'Todos los pedidos para delivery aparecerán aquí'}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-                {sortedOrders.map((order) => (
-                  <DeliveryOrderCard
-                    key={order.id}
-                    order={order}
-                    onMarkAsDelivered={handleMarkAsDelivered}
-                    onConfirmPayment={handleConfirmPayment}
-                  />
-                ))}
-              </div>
-            )}
-          </>
-        )}
-      </div>
-
-      {/* Quick Actions Footer */}
-      {stats.ready > 0 && (
-        <div className="card">
-          <div className="card-body">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Package className="text-green-500" size={20} />
-                <span className="font-medium text-gray-800">
-                  {stats.ready} pedido(s) listo(s) para entregar
-                </span>
-              </div>
-              
-              <div className="flex items-center gap-2 text-sm text-gray-600">
-                <Clock size={16} />
-                <span>Actualización en tiempo real</span>
-              </div>
-            </div>
+      {/* Buscador (oculto en métricas) */}
+      {tab !== "delivered_today" && (
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 border rounded-lg px-2 bg-white/70 w-full max-w-xl">
+            <Search size={16} className="text-gray-500" />
+            <input
+              className="h-10 flex-1 outline-none text-sm"
+              placeholder="Buscar por código, cliente, dirección o repartidor…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
           </div>
         </div>
+      )}
+
+      <TabNavigation
+        activeTab={tab}
+        onTabChange={(t: string) => setTab(t as any)}
+        tabs={[
+          { key: "ready", label: `Listos (${ready.length})`, icon: () => <span>🟡</span> },
+          { key: "on_route", label: `En ruta (${onRoute.length})`, icon: () => <span>🔵</span> },
+          { key: "delivered_today", label: `Entregados hoy (${metrics.count})`, icon: () => <span>✅</span> },
+        ]}
+      />
+
+      {tab === "ready" && (
+        <section className="space-y-2">
+          {ready.length === 0 ? (
+            <div className="text-sm text-gray-500 border rounded-lg p-3 bg-white/60">
+              No hay pedidos listos.
+            </div>
+          ) : (
+            ready.map((o: Order) => (
+              <DeliveryOrderCard
+                key={o.id}
+                order={o}
+                onAssign={(name: string, phone?: string) => assignDriver(o.id, name, phone)}
+                onStart={() => startRoute(o.id)}
+                onDelivered={() => {}}
+              />
+            ))
+          )}
+        </section>
+      )}
+
+      {tab === "on_route" && (
+        <section className="space-y-2">
+          {onRoute.length === 0 ? (
+            <div className="text-sm text-gray-500 border rounded-lg p-3 bg-white/60">
+              No hay pedidos en ruta.
+            </div>
+          ) : (
+            onRoute.map((o: Order) => (
+              <DeliveryOrderCard
+                key={o.id}
+                order={o}
+                onAssign={(name: string, phone?: string) => assignDriver(o.id, name, phone)}
+                onStart={() => {}}
+                onDelivered={() => markDelivered(o.id)}
+              />
+            ))
+          )}
+        </section>
+      )}
+
+      {tab === "delivered_today" && (
+        <section className="space-y-3">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            <CardStat label="Entregas hoy" value={`${metrics.count}`} />
+            <CardStat
+              label="Tiempo promedio en ruta"
+              value={metrics.count ? fmtMin(metrics.avgRouteTimeMs) : "—"}
+            />
+            <CardStat
+              label="Km promedio por entrega"
+              value={metrics.count ? `${metrics.avgKm.toFixed(1)} km` : "—"}
+            />
+            <CardStat
+              label="Km totales hoy"
+              value={metrics.count ? `${metrics.totalKm.toFixed(1)} km` : "—"}
+            />
+          </div>
+
+          {metrics.count > 0 ? (
+            <div className="border rounded-xl bg-white/70">
+              <div className="px-3 py-2 text-sm font-semibold border-b">
+                Entregas de hoy
+              </div>
+              <div className="divide-y">
+                {deliveredToday.map((o: Order) => {
+                  const pickupAt = (o as any).pickupAt as number | undefined;
+                  const deliveredAt = (o as any).deliveredAt as number | undefined;
+                  const timeMs = pickupAt && deliveredAt && deliveredAt >= pickupAt ? deliveredAt - pickupAt : 0;
+                  const km = (o.routeMeta as any)?.distance ? (o.routeMeta as any).distance / 1000 : 0;
+                  return (
+                    <div key={o.id} className="px-3 py-2 text-sm grid grid-cols-1 md:grid-cols-5 gap-1">
+                      <div className="font-medium">#{o.publicCode} • {o.name}</div>
+                      <div className="text-gray-600">{o.address || "—"}</div>
+                      <div className="text-gray-600">{o.driver?.name ? `Repartidor: ${o.driver.name}` : "Repartidor: —"}</div>
+                      <div className="text-gray-600">Ruta: {km ? `${km.toFixed(1)} km` : "—"}</div>
+                      <div className="text-gray-600">Tiempo: {timeMs ? fmtMin(timeMs) : "—"}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : (
+            <div className="text-sm text-gray-500 border rounded-lg p-3 bg-white/60">
+              Aún no hay entregas hoy.
+            </div>
+          )}
+        </section>
       )}
     </div>
   );
 };
 
-// Empty state component
-const EmptyDelivery: React.FC = () => (
-  <div className="card">
-    <div className="card-body">
-      <div className="text-center py-12">
-        <Truck size={64} className="mx-auto mb-4 text-gray-300" />
-        <h3 className="text-xl font-semibold text-gray-600 mb-2">
-          No hay pedidos para delivery
-        </h3>
-        <p className="text-gray-500 mb-6">
-          Los pedidos listos para entregar aparecerán aquí automáticamente
-        </p>
-        <div className="inline-flex items-center gap-2 px-4 py-2 bg-green-100 text-green-800 rounded-lg">
-          <MapPin size={16} />
-          <span className="text-sm font-medium">Esperando pedidos de cocina</span>
-        </div>
-      </div>
-    </div>
-  </div>
-);
+export default DeliveryPanel;
