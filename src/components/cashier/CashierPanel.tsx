@@ -15,11 +15,14 @@ import {
   AlertCircle,
   Eye,
   Truck,
+  CreditCard,
 } from "lucide-react";
 
 import PromotionsGrid from "../cashier/PromotionsGrid";
 import { CartPanel } from "../cashier/CartPanel";
-import { CustomerForm } from "../cashier/CustomerForm";
+import CustomerForm from "../cashier/CustomerForm";
+import PayPanel from "../cashier/PayPanel"; // ⬅️ usa tu PayPanel externo
+
 import { getMenuItem } from "../../features/menu/catalog";
 import { KioskModal } from "../ui/KioskModal";
 
@@ -43,17 +46,22 @@ export interface CartItem {
   cookingTime: number;
   quantity: number;
 }
-type CashierTab = "dashboard" | "promotions" | "customer" | "cart" | "orders";
+
+type CashierTab = "dashboard" | "promotions" | "customer" | "cart" | "pay" | "orders";
+
+type PaymentMethod = "efectivo" | "debito" | "credito" | "transferencia" | "mp";
 
 interface CustomerFormData {
   name: string;
   phone: string;
+  rut?: string;        // ⬅️ para PayPanel
+  email?: string;      // opcional, por si luego lo usas
   street: string;
   number: string;
   sector: string;
   city: string;
   references: string;
-  paymentMethod: "efectivo" | "debito" | "credito" | "transferencia" | "mp";
+  paymentMethod: PaymentMethod;
   paymentStatus: string;
   dueMethod: string;
   mpChannel?: "delivery" | "local";
@@ -74,7 +82,7 @@ interface OrderUI {
   createdAt: number;
   estimatedTime: number;
   paymentMethod: string;
-  meta?: OrderMeta; // ✅ para boleta
+  meta?: OrderMeta;
 }
 
 /* ===== Extras ===== */
@@ -260,7 +268,6 @@ const OrderDetailModal: React.FC<{
     return map[(s || "").toLowerCase()] ?? 0;
   };
 
-  // Progreso por tiempo
   const [now, setNow] = React.useState(Date.now());
   React.useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
@@ -274,7 +281,6 @@ const OrderDetailModal: React.FC<{
   const idxByTime = Math.min(4, Math.floor(percentByTime * STAGES.length));
   const currentIdx = Math.max(idxByStatus, idxByTime);
 
-  // --------- EXTRAS desde meta ---------
   const meta = order.meta;
 
   const deliveryFee = meta?.service === "delivery" ? meta?.deliveryFee ?? 0 : 0;
@@ -310,7 +316,6 @@ const OrderDetailModal: React.FC<{
 
   const extrasTotalMeta = extrasLines.reduce((s, l) => s + (l.amount || 0), 0);
 
-  // Excluir la línea sintética "Extras" del carrito para no duplicar
   const cartWithoutExtras = (order.cart || []).filter((it) => it.id !== EXTRAS_ITEM_ID);
 
   const itemsSubtotal = cartWithoutExtras.reduce(
@@ -369,7 +374,7 @@ const OrderDetailModal: React.FC<{
           })}
         </div>
 
-        <div className="w-full bg-gray-200 h-2 rounded">
+        <div className="w-full bg-gray-2 00 h-2 rounded">
           <div
             className="h-2 rounded bg-rose-600 transition-all duration-500"
             style={{ width: `${Math.min(100, Math.max(0, percentByTime * 100))}%` }}
@@ -441,7 +446,6 @@ const OrderDetailModal: React.FC<{
 
           <div className="my-3 border-t border-dashed border-gray-300" />
 
-          {/* Totales base + extras */}
           <div className="space-y-1 text-[13px]">
             <div className="flex justify-between">
               <span className="text-gray-600">Subtotal ítems</span>
@@ -457,7 +461,6 @@ const OrderDetailModal: React.FC<{
             </div>
           </div>
 
-          {/* Detalle de extras con cantidades */}
           {extrasLines.length > 0 && (
             <>
               <div className="my-3 border-t border-dashed border-gray-300" />
@@ -490,87 +493,10 @@ const OrderDetailModal: React.FC<{
   );
 };
 
-/* ===== Panel: Clientes existentes (buscador + lista) ===== */
-type SimpleCustomer = {
-  name: string;
-  phone: string;
-  street: string;
-  number: string;
-  sector?: string;
-  city?: string;
-  references?: string;
-  address?: string;
-  lastAt?: number;
-};
-
-const ExistingCustomersPanel: React.FC<{
-  customers: SimpleCustomer[];
-  onUseCustomer: (c: SimpleCustomer) => void;
-}> = ({ customers, onUseCustomer }) => {
-  const [q, setQ] = React.useState("");
-
-  const filtered = React.useMemo(() => {
-    const k = q.trim().toLowerCase();
-    if (!k) return customers;
-    return customers.filter((c) =>
-      [c.name, c.phone, c.street, c.number, c.city, c.sector, c.address]
-        .filter(Boolean)
-        .some((v) => String(v).toLowerCase().includes(k))
-    );
-  }, [q, customers]);
-
-  return (
-    <div className="bg-white rounded-xl border border-gray-200">
-      <div className="p-4 border-b">
-        <h3 className="text-lg font-semibold">Clientes registrados</h3>
-        <p className="text-sm text-gray-500">Busca por nombre, teléfono o dirección.</p>
-        <div className="mt-3">
-          <input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Buscar por nombre, teléfono o dirección…"
-            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-rose-500"
-          />
-        </div>
-      </div>
-
-      {filtered.length === 0 ? (
-        <div className="p-10 text-center text-gray-500">Sin resultados. Prueba con otro término.</div>
-      ) : (
-        <ul className="divide-y">
-          {filtered.map((c, i) => (
-            <li key={i} className="p-4 flex items-center justify-between gap-4">
-              <div className="min-w-0">
-                <p className="font-medium text-gray-900 truncate">{c.name}</p>
-                <p className="text-sm text-gray-600 truncate">{c.phone}</p>
-                <p className="text-sm text-gray-500 truncate">
-                  {c.address ||
-                    `${c.street || ""} ${c.number || ""}${c.sector ? `, ${c.sector}` : ""}${
-                      c.city ? `, ${c.city}` : ""
-                    }`}
-                </p>
-                {!!c.lastAt && (
-                  <p className="text-xs text-gray-400">Último pedido: {new Date(c.lastAt).toLocaleString("es-CL")}</p>
-                )}
-              </div>
-              <button
-                onClick={() => onUseCustomer(c)}
-                className="shrink-0 px-3 py-2 text-sm bg-rose-600 text-white rounded-lg hover:bg-rose-700"
-              >
-                Usar cliente
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-};
-
 /* ===================== Componente Principal ===================== */
 type Props = {
   ordersApi: OrdersApi;
-  onOrderCreated?: () => void; // no saltamos a cocina aquí
+  onOrderCreated?: () => void;
 };
 
 const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
@@ -586,39 +512,12 @@ const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
   // Órdenes recién creadas (buffer local)
   const [recentOrders, setRecentOrders] = useState<OrderUI[]>([]);
 
-  // Fallback demo para formulario
-  const [customers, setCustomers] = useState<any[]>([]);
-  useEffect(() => {
-    const rand = (a: number, b: number) => Math.floor(Math.random() * (b - a + 1)) + a;
-    const pick = <T,>(arr: T[]) => arr[Math.floor(Math.random() * arr.length)];
-    const first = ["Juan", "María", "Camila", "Javier", "Daniela", "Felipe"];
-    const last = ["Pérez", "García", "Soto", "Fuentes", "Rojas", "Castro"];
-    const streets = ["Av. Capitán Ávalos", "Los Aromos", "Av. Angelmó"];
-    const sectors = ["Mirasol", "Cardonal", "Centro"];
-    const cities = ["Puerto Montt", "Puerto Varas", "Osorno"];
-    const mkPhone = (i: number) =>
-      `+56 9 9${(9000 + (i % 9000)).toString().padStart(4, "0")} ${(
-        1000 +
-        ((i * 7) % 9000)
-      )
-        .toString()
-        .padStart(4, "0")}`;
-    const mkCustomer = (i: number) => ({
-      name: `${pick(first)} ${pick(last)}`,
-      phone: mkPhone(i),
-      street: pick(streets),
-      number: String(rand(1, 2500)),
-      sector: Math.random() < 0.7 ? pick(sectors) : "",
-      city: pick(cities),
-      references: "",
-    });
-    setCustomers(Array.from({ length: 20 }, (_, i) => mkCustomer(i + 1)));
-  }, []);
-
   // Cliente + errores + extras
   const [customerData, setCustomerData] = useState<CustomerFormData>({
     name: "",
     phone: "",
+    rut: "",        // ⬅️ ahora presente
+    email: "",
     street: "",
     number: "",
     sector: "",
@@ -627,6 +526,7 @@ const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
     paymentMethod: "debito",
     paymentStatus: "paid",
     dueMethod: "efectivo",
+    mpChannel: undefined,
   });
   const [errors, setErrors] = useState<FormErrors>({});
   const [isCreatingOrder, setIsCreatingOrder] = useState(false);
@@ -751,7 +651,7 @@ const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
       p.drinks.forEach((d, idx) => {
         if (!d || !d.quantity) return;
         const id = Date.now() + idx;
-        const item = {
+        const bev = {
           id,
           name: d.name,
           description: "Bebida",
@@ -764,7 +664,7 @@ const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
           cookingTime: 0,
           quantity: d.quantity,
         } as CartItem;
-        setCart((prev) => [...prev, item]);
+        setCart((prev) => [...prev, bev]);
       });
     }
 
@@ -828,27 +728,11 @@ const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
   // el total del carrito YA incluye la línea "Extras"
   const grandTotal = useMemo(() => cartTotal, [cartTotal]);
 
-  // ==== Construir lista de clientes existentes desde el store/hook ====
-  const existingCustomers: SimpleCustomer[] = useMemo(() => {
-    const arr = (ordersApi.customers || []).map((c) => ({
-      name: c.name || "",
-      phone: c.phone || "",
-      street: c.street || "",
-      number: c.number || "",
-      sector: c.sector || "",
-      city: c.city || "",
-      references: c.references || "",
-      address: c.address || [c.street, c.number, c.sector, c.city].filter(Boolean).join(", "),
-      lastAt: c.createdAt || 0,
-    }));
-    return arr.sort((a, b) => (b.lastAt || 0) - (a.lastAt || 0));
-  }, [ordersApi.customers]);
-
-  // Lista a mostrar: recientes + store (únicos)
+  // Lista a mostrar en “Órdenes”: recientes + store (únicos)
   const displayedOrders = useMemo(() => {
     const map = new Map<number, OrderUI>();
     for (const o of recentOrders) map.set(o.id, o);
-    for (const o of ordersApi.orders as unknown as OrderUI[]) if (!map.has(o.id)) map.set(o.id, o);
+    for (const o of (ordersApi.orders as unknown as OrderUI[])) if (!map.has(o.id)) map.set(o.id, o);
     return Array.from(map.values());
   }, [recentOrders, ordersApi.orders]);
 
@@ -868,7 +752,7 @@ const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
         coordinates: coords as any,
         geocodePrecision: "approx" as any,
         routeMeta: null,
-        meta: orderMeta as OrderMeta | undefined, // ✅ manda meta
+        meta: orderMeta as OrderMeta | undefined,
       };
 
       const created = await ordersApi.createOrder(payload as any);
@@ -880,7 +764,6 @@ const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
 
       ordersApi.updateOrderStatus?.(created.id, "pending");
 
-      // Fallback: si la API aún no devuelve meta, la agregamos localmente
       const createdWithMeta = { ...(created as any), meta: created.meta ?? orderMeta } as OrderUI;
 
       setRecentOrders((prev) => [createdWithMeta, ...prev]);
@@ -892,6 +775,8 @@ const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
       setCustomerData({
         name: "",
         phone: "",
+        rut: "",
+        email: "",
         street: "",
         number: "",
         sector: "",
@@ -900,12 +785,12 @@ const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
         paymentMethod: "debito",
         paymentStatus: "paid",
         dueMethod: "efectivo",
+        mpChannel: undefined,
       });
       setErrors({});
       setActiveTab("orders");
       notify("success", `Pedido #${created.publicCode} creado`);
 
-      // refresco tolerante (si existe)
       try {
         if (typeof (ordersApi as any)?.fetchOrders === "function") {
           await (ordersApi as any).fetchOrders();
@@ -937,10 +822,10 @@ const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
     { key: "promotions", label: "Promociones", icon: Utensils },
     { key: "customer", label: "Cliente", icon: User },
     { key: "cart", label: "Carrito", icon: ShoppingCart, badge: cartCount || undefined },
+    { key: "pay", label: "Pagar", icon: CreditCard },
     { key: "orders", label: "Órdenes", icon: Package, badge: displayedOrders.length || undefined },
   ];
 
-  /* Bounce: después de confirmar promo → Carrito → Cliente */
   const goToCreateOrder = () => {
     setActiveTab("cart");
     setTimeout(() => setActiveTab("customer"), 140);
@@ -968,7 +853,7 @@ const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
                   Panel de Cajero/Vendedor{" "}
                   <span className="text-sm bg-green-100 text-green-700 px-2 py-1 rounded-full">En línea</span>
                 </h1>
-                <p className="text-gray-600">Flujo: Promociones → Carrito → Cliente (crear pedido)</p>
+                <p className="text-gray-600">Flujo: Promociones → Carrito → Cliente → Pagar</p>
               </div>
             </div>
             <div className="text-right">
@@ -1045,7 +930,7 @@ const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
                   !!customerData.street?.trim() &&
                   !!customerData.number?.trim();
 
-                if (hasMin) createOrder();
+                if (hasMin) setActiveTab("pay");
                 else {
                   setActiveTab("customer");
                   notify("info", "Completa los datos del cliente para continuar");
@@ -1056,53 +941,60 @@ const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
 
           {/* Cliente */}
           {activeTab === "customer" && (
-            existingCustomers.length > 0 ? (
-              <ExistingCustomersPanel
-                customers={existingCustomers}
-                onUseCustomer={(c) => {
-                  setCustomerData((prev) => ({
-                    ...prev,
-                    name: c.name || "",
-                    phone: c.phone || "",
-                    street: c.street || "",
-                    number: c.number || "",
-                    sector: c.sector || "",
-                    city: c.city || "Puerto Montt",
-                    references: c.references || "",
-                  }));
-                  // Crear pedido inmediatamente (si prefieres confirmar: setActiveTab("cart"))
-                  createOrder();
-                }}
-              />
-            ) : (
-              <CustomerForm
-                customerData={customerData}
-                onCustomerDataChange={setCustomerData}
-                errors={errors}
-                customers={customers}
-                onSelectCustomer={(c) => {
-                  setCustomerData((prev) => ({
-                    ...prev,
-                    name: c?.name ?? "",
-                    phone: c?.phone ?? "",
-                    street: c?.street ?? "",
-                    number: c?.number ?? prev.number ?? "",
-                    sector: c?.sector ?? prev.sector ?? "",
-                    city: c?.city ?? prev.city ?? "Puerto Montt",
-                    references: c?.references ?? prev.references ?? "",
-                  }));
-                  notify("info", `Cliente ${c?.name ?? "Sin nombre"} seleccionado`);
-                }}
-                cart={cart}
-                cartTotal={cartTotal}
-                estimatedTime={estimatedCooking || 15}
-                onCreateOrder={createOrder}
-                isCreatingOrder={isCreatingOrder}
-                orderMeta={orderMeta}
-                onRequestEditExtras={() => setActiveTab("promotions")}
-                onGoToCart={() => setActiveTab("cart")}
-              />
-            )
+            <CustomerForm
+              customerData={customerData}
+              onCustomerDataChange={setCustomerData}
+              errors={errors}
+              onSelectCustomer={(c) => {
+                setCustomerData((prev) => ({
+                  ...prev,
+                  name: c?.name ?? prev.name,
+                  phone: c?.phone ?? prev.phone,
+                  street: c?.street ?? prev.street,
+                  number: c?.number ?? prev.number,
+                  sector: c?.sector ?? prev.sector,
+                  city: c?.city ?? prev.city ?? "Puerto Montt",
+                  references: c?.references ?? prev.references,
+                }));
+                notify("info", `Cliente ${c?.name ?? "Sin nombre"} seleccionado`);
+              }}
+              cart={cart}
+              cartTotal={cartTotal}
+              estimatedTime={estimatedCooking || 15}
+              onCreateOrder={createOrder}
+              isCreatingOrder={isCreatingOrder}
+              orderMeta={orderMeta}
+              onRequestEditExtras={() => setActiveTab("promotions")}
+              onGoToCart={() => setActiveTab("cart")}
+            />
+          )}
+
+          {/* Pagar */}
+          {activeTab === "pay" && (
+            <PayPanel
+              total={grandTotal}
+              customerData={{
+                name: customerData.name,
+                phone: customerData.phone,
+                rut: customerData.rut || "",
+                paymentMethod: customerData.paymentMethod,
+                mpChannel: customerData.mpChannel, // si tu PayPanel no la soporta, elimina esta línea
+              }}
+              onChangeCustomerData={(d) =>
+                setCustomerData((prev) => ({
+                  ...prev,
+                  name: d.name ?? prev.name,
+                  phone: d.phone ?? prev.phone,
+                  rut: d.rut ?? prev.rut ?? "",
+                  paymentMethod: (d.paymentMethod ?? prev.paymentMethod) as PaymentMethod,
+                  mpChannel: d.mpChannel ?? prev.mpChannel,
+                }))
+              }
+              isPaying={isCreatingOrder}
+              onBackToCart={() => setActiveTab("cart")}
+              onConfirmPay={createOrder}
+              orderMeta={orderMeta}
+            />
           )}
 
           {/* Órdenes */}
@@ -1173,6 +1065,7 @@ const KpiCard: React.FC<{
     </div>
   );
 };
+
 const StatusCard: React.FC<{
   title: string;
   value: number;

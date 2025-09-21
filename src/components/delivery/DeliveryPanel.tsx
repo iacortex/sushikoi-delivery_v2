@@ -1,234 +1,259 @@
-// src/components/delivery/DeliveryPanel.tsx
 import React, { useMemo, useState } from "react";
+import { Search, RefreshCw, Truck, Route, CheckCircle2, Filter } from "lucide-react";
+import type { Order } from "@/types";
 import { useOrders } from "@/features/orders/useOrders";
 import { DeliveryOrderCard } from "./DeliveryOrderCard";
-import { Search, RefreshCw } from "lucide-react";
-import { TabNavigation } from "@/components/layout/TabNavigation"; // ⬅️ export nombrado
-import type { Order } from "@/types";
+import { normalizeStatus } from "@/features/orders/helpers";
 
-/* ================= Utils ================= */
+/* ======================= helpers ======================= */
+
 const isToday = (ts?: number | null) => {
   if (!ts) return false;
-  const d = new Date(ts);
-  const now = new Date();
-  return (
-    d.getFullYear() === now.getFullYear() &&
-    d.getMonth() === now.getMonth() &&
-    d.getDate() === now.getDate()
-  );
+  const a = new Date(ts), b = new Date();
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 };
 
-const fmtMin = (ms: number) => {
-  const m = Math.round(ms / 60000);
-  if (m < 60) return `${m} min`;
-  const h = Math.floor(m / 60);
-  const r = m % 60;
-  return `${h} h ${r} min`;
+const looksLikeDelivery = (s?: string | null) => {
+  const k = String(s ?? "").toLowerCase();
+  return k.includes("delivery") || k.includes("envio") || k.includes("entrega") || k.includes("repart");
 };
 
-const CardStat: React.FC<{ label: string; value: string }> = ({ label, value }) => (
-  <div className="rounded-xl border bg-white/70 p-3">
-    <div className="text-xs text-gray-600">{label}</div>
-    <div className="text-lg font-semibold text-gray-900">{value}</div>
-  </div>
+/* ======================= UI bits ======================= */
+
+const Pill: React.FC<{ children: React.ReactNode; tone?: "gray" | "green" | "blue" | "amber" }>=({children,tone="gray"})=>(
+  <span className={
+    "inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full " +
+    (tone==="green" ? "bg-emerald-100 text-emerald-700" :
+     tone==="blue"  ? "bg-blue-100 text-blue-700" :
+     tone==="amber" ? "bg-amber-100 text-amber-800" :
+                      "bg-gray-100 text-gray-700")
+  }>{children}</span>
 );
 
-/* ========================================= */
+/* ======================= component ======================= */
 
 const DeliveryPanel: React.FC = () => {
   const { orders, assignDriver, startRoute, markDelivered } = useOrders();
+
+  const [tab, setTab] = useState<"ready"|"on_route"|"delivered_today">("ready");
   const [query, setQuery] = useState("");
-  const [tab, setTab] = useState<"ready" | "on_route" | "delivered_today">("ready");
+  const [onlyDelivery, setOnlyDelivery] = useState(false); // ← filtro opcional
 
-  // Colecciones base
-  const deliveryOrders: Order[] = useMemo(
-    () => orders.filter((o: Order) => o.service === "delivery"),
-    [orders]
-  );
+  // 1) dataset base: incluimos TODO y luego filtramos por tab
+  const base: Order[] = useMemo(() => {
+    const list = orders ?? [];
+    if (!onlyDelivery) return list;
+    // si activan el filtro, dejamos solo los que parecen delivery
+    return list.filter(o => looksLikeDelivery((o as any).service));
+  }, [orders, onlyDelivery]);
 
-  // Filtro por búsqueda (solo aplica a ready/on_route)
-  const searchable = useMemo(
-    () => deliveryOrders.filter((o: Order) => o.status === "ready" || o.status === "on_route"),
-    [deliveryOrders]
-  );
-
-  const filtered = useMemo(() => {
+  // 2) búsqueda simple
+  const bySearch = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return searchable;
-    return searchable.filter((o: Order) =>
-      (o.publicCode || "").toLowerCase().includes(q) ||
-      (o.name || "").toLowerCase().includes(q) ||
-      (o.address || "").toLowerCase().includes(q) ||
-      (o.driver?.name || "").toLowerCase().includes(q)
+    if (!q) return base;
+    return base.filter(o =>
+      String(o.publicCode ?? o.id).toLowerCase().includes(q) ||
+      (o.name ?? "").toLowerCase().includes(q) ||
+      (o.address ?? "").toLowerCase().includes(q) ||
+      (o.driver?.name ?? "").toLowerCase().includes(q)
     );
-  }, [query, searchable]);
+  }, [base, query]);
 
-  const ready: Order[] = filtered.filter((o: Order) => o.status === "ready");
-  const onRoute: Order[] = filtered.filter((o: Order) => o.status === "on_route");
-
-  // Entregados hoy (para métricas)
-  const deliveredToday: Order[] = useMemo(
-    () => deliveryOrders.filter((o: Order) => o.status === "delivered" && isToday((o as any).deliveredAt)),
-    [deliveryOrders]
+  // 3) buckets por estado NORMALIZADO
+  const ready = useMemo(
+    () => bySearch.filter(o => normalizeStatus(o.status) === "ready"),
+    [bySearch]
+  );
+  const onRoute = useMemo(
+    () => bySearch.filter(o => normalizeStatus(o.status) === "on_route"),
+    [bySearch]
+  );
+  const deliveredToday = useMemo(
+    () => base.filter(o => normalizeStatus(o.status)==="delivered" && isToday((o as any).deliveredAt)),
+    [base]
   );
 
-  const metrics = useMemo(() => {
-    if (deliveredToday.length === 0) {
-      return { count: 0, avgRouteTimeMs: 0, totalKm: 0, avgKm: 0 };
-    }
-    let sumTime = 0;
-    let sumKm = 0;
-    let countWithTime = 0;
-    let countWithKm = 0;
-
-    for (const o of deliveredToday) {
-      const pickupAt = (o as any).pickupAt as number | undefined;
-      const deliveredAt = (o as any).deliveredAt as number | undefined;
-      if (pickupAt && deliveredAt && deliveredAt >= pickupAt) {
-        sumTime += deliveredAt - pickupAt;
-        countWithTime++;
-      }
-      const d = (o.routeMeta as any)?.distance as number | undefined;
-      if (typeof d === "number" && d >= 0) {
-        sumKm += d;
-        countWithKm++;
-      }
-    }
-
-    const avgRouteTimeMs = countWithTime ? sumTime / countWithTime : 0;
-    const totalKm = sumKm / 1000;
-    const avgKm = countWithKm ? (sumKm / countWithKm) / 1000 : 0;
-
-    return { count: deliveredToday.length, avgRouteTimeMs, totalKm, avgKm };
-  }, [deliveredToday]);
+  // 4) métricas
+  const deliveredCount = deliveredToday.length;
+  const headerCount =
+    tab === "ready" ? ready.length :
+    tab === "on_route" ? onRoute.length :
+    deliveredCount;
 
   return (
-    <div className="p-3 md:p-4 space-y-3">
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold">Panel Delivery</h2>
-        <button
-          className="h-9 px-3 rounded-lg border bg-white hover:bg-gray-50 flex items-center gap-2"
-          onClick={() => window.location.reload()}
-        >
-          <RefreshCw size={16} /> Actualizar
-        </button>
-      </div>
+    <div className="p-4 md:p-6">
+      {/* Sticky subheader */}
+      <div className="sticky top-0 z-10 bg-gradient-to-b from-white/90 to-transparent backdrop-blur supports-[backdrop-filter]:backdrop-blur-md pb-2">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-xl md:text-2xl font-bold tracking-tight flex items-center gap-2">
+            <Truck className="text-pink-600" size={22} /> Panel de Delivery
+          </h2>
+          <button
+            onClick={() => window.location.reload()}
+            className="h-9 px-3 rounded-lg border bg-white hover:bg-gray-50 flex items-center gap-2 text-sm"
+          >
+            <RefreshCw size={16} /> Actualizar
+          </button>
+        </div>
 
-      {/* Buscador (oculto en métricas) */}
-      {tab !== "delivered_today" && (
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-2 border rounded-lg px-2 bg-white/70 w-full max-w-xl">
-            <Search size={16} className="text-gray-500" />
-            <input
-              className="h-10 flex-1 outline-none text-sm"
-              placeholder="Buscar por código, cliente, dirección o repartidor…"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-            />
+        {/* search + filters */}
+        {tab !== "delivered_today" && (
+          <div className="flex flex-col md:flex-row md:items-center gap-2">
+            <div className="flex items-center gap-2 border rounded-xl px-3 bg-white/90 w-full md:max-w-xl shadow-sm">
+              <Search size={16} className="text-gray-500" />
+              <input
+                className="h-10 flex-1 outline-none text-sm bg-transparent"
+                placeholder="Buscar por código, cliente, dirección o repartidor…"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+              {query && (
+                <button onClick={()=>setQuery("")} className="text-xs text-gray-500 hover:text-gray-700">limpiar</button>
+              )}
+            </div>
+
+            <button
+              onClick={() => setOnlyDelivery(v=>!v)}
+              className={"inline-flex items-center gap-2 h-10 px-3 rounded-lg text-sm border shadow-sm " +
+                (onlyDelivery ? "bg-blue-600 text-white hover:bg-blue-700" : "bg-white hover:bg-gray-50")}
+              title="Mostrar solo pedidos con servicio 'delivery'"
+            >
+              <Filter size={14} />
+              {onlyDelivery ? "Solo delivery" : "Todos los servicios"}
+            </button>
+          </div>
+        )}
+
+        {/* tabs */}
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <button
+            onClick={()=>setTab("ready")}
+            className={`h-9 px-3 rounded-lg text-sm font-medium inline-flex items-center gap-2 ${
+              tab==="ready" ? "bg-red-600 text-white" : "bg-white border hover:bg-gray-50"
+            }`}
+          >
+            <span className="inline-block w-2 h-2 rounded-full bg-yellow-400" />
+            Listos ({ready.length})
+          </button>
+          <button
+            onClick={()=>setTab("on_route")}
+            className={`h-9 px-3 rounded-lg text-sm font-medium inline-flex items-center gap-2 ${
+              tab==="on_route" ? "bg-blue-600 text-white" : "bg-white border hover:bg-gray-50"
+            }`}
+          >
+            <Route size={16} />
+            En ruta ({onRoute.length})
+          </button>
+          <button
+            onClick={()=>setTab("delivered_today")}
+            className={`h-9 px-3 rounded-lg text-sm font-medium inline-flex items-center gap-2 ${
+              tab==="delivered_today" ? "bg-emerald-600 text-white" : "bg-white border hover:bg-gray-50"
+            }`}
+          >
+            <CheckCircle2 size={16} />
+            Entregados hoy ({deliveredCount})
+          </button>
+
+          <div className="ml-auto">
+            <Pill tone={tab==="ready" ? "amber" : tab==="on_route" ? "blue" : "green"}>
+              {tab==="ready" ? "Listos" : tab==="on_route" ? "En ruta" : "Resumen de hoy"} • {headerCount}
+            </Pill>
           </div>
         </div>
-      )}
+      </div>
 
-      <TabNavigation
-        activeTab={tab}
-        onTabChange={(t: string) => setTab(t as any)}
-        tabs={[
-          { key: "ready", label: `Listos (${ready.length})`, icon: () => <span>🟡</span> },
-          { key: "on_route", label: `En ruta (${onRoute.length})`, icon: () => <span>🔵</span> },
-          { key: "delivered_today", label: `Entregados hoy (${metrics.count})`, icon: () => <span>✅</span> },
-        ]}
-      />
-
-      {tab === "ready" && (
-        <section className="space-y-2">
-          {ready.length === 0 ? (
-            <div className="text-sm text-gray-500 border rounded-lg p-3 bg-white/60">
-              No hay pedidos listos.
-            </div>
-          ) : (
-            ready.map((o: Order) => (
-              <DeliveryOrderCard
-                key={o.id}
-                order={o}
-                onAssign={(name: string, phone?: string) => assignDriver(o.id, name, phone)}
-                onStart={() => startRoute(o.id)}
-                onDelivered={() => {}}
-              />
-            ))
-          )}
-        </section>
-      )}
-
-      {tab === "on_route" && (
-        <section className="space-y-2">
-          {onRoute.length === 0 ? (
-            <div className="text-sm text-gray-500 border rounded-lg p-3 bg-white/60">
-              No hay pedidos en ruta.
-            </div>
-          ) : (
-            onRoute.map((o: Order) => (
-              <DeliveryOrderCard
-                key={o.id}
-                order={o}
-                onAssign={(name: string, phone?: string) => assignDriver(o.id, name, phone)}
-                onStart={() => {}}
-                onDelivered={() => markDelivered(o.id)}
-              />
-            ))
-          )}
-        </section>
-      )}
-
-      {tab === "delivered_today" && (
-        <section className="space-y-3">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-            <CardStat label="Entregas hoy" value={`${metrics.count}`} />
-            <CardStat
-              label="Tiempo promedio en ruta"
-              value={metrics.count ? fmtMin(metrics.avgRouteTimeMs) : "—"}
+      {/* contenido */}
+      <div className="mt-4 space-y-3">
+        {tab === "ready" && (
+          ready.length === 0 ? (
+            <EmptyState
+              title="No hay pedidos listos."
+              subtitle="Cuando Cocina marque un pedido como listo, aparecerá aquí."
+              hint="¿Cocina está usando 'ready', 'listo' o 'ready_for_pickup'? Todo eso lo normalizamos."
             />
-            <CardStat
-              label="Km promedio por entrega"
-              value={metrics.count ? `${metrics.avgKm.toFixed(1)} km` : "—"}
-            />
-            <CardStat
-              label="Km totales hoy"
-              value={metrics.count ? `${metrics.totalKm.toFixed(1)} km` : "—"}
-            />
-          </div>
-
-          {metrics.count > 0 ? (
-            <div className="border rounded-xl bg-white/70">
-              <div className="px-3 py-2 text-sm font-semibold border-b">
-                Entregas de hoy
-              </div>
-              <div className="divide-y">
-                {deliveredToday.map((o: Order) => {
-                  const pickupAt = (o as any).pickupAt as number | undefined;
-                  const deliveredAt = (o as any).deliveredAt as number | undefined;
-                  const timeMs = pickupAt && deliveredAt && deliveredAt >= pickupAt ? deliveredAt - pickupAt : 0;
-                  const km = (o.routeMeta as any)?.distance ? (o.routeMeta as any).distance / 1000 : 0;
-                  return (
-                    <div key={o.id} className="px-3 py-2 text-sm grid grid-cols-1 md:grid-cols-5 gap-1">
-                      <div className="font-medium">#{o.publicCode} • {o.name}</div>
-                      <div className="text-gray-600">{o.address || "—"}</div>
-                      <div className="text-gray-600">{o.driver?.name ? `Repartidor: ${o.driver.name}` : "Repartidor: —"}</div>
-                      <div className="text-gray-600">Ruta: {km ? `${km.toFixed(1)} km` : "—"}</div>
-                      <div className="text-gray-600">Tiempo: {timeMs ? fmtMin(timeMs) : "—"}</div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
           ) : (
-            <div className="text-sm text-gray-500 border rounded-lg p-3 bg-white/60">
-              Aún no hay entregas hoy.
+            <div className="grid gap-3">
+              {ready.map(o => (
+                <DeliveryOrderCard
+                  key={o.id}
+                  order={o}
+                  onAssign={(name, phone)=>assignDriver(o.id, name, phone)}
+                  onStart={()=>startRoute(o.id)}
+                  onMarkAsDelivered={()=>markDelivered(o.id)}
+                />
+              ))}
             </div>
-          )}
-        </section>
-      )}
+          )
+        )}
+
+        {tab === "on_route" && (
+          onRoute.length === 0 ? (
+            <EmptyState
+              title="No hay pedidos en ruta."
+              subtitle="Inicia la ruta desde un pedido listo para moverlo aquí."
+              hint="También puedes navegar con Google Maps o Waze desde la tarjeta."
+            />
+          ) : (
+            <div className="grid gap-3">
+              {onRoute.map(o => (
+                <DeliveryOrderCard
+                  key={o.id}
+                  order={o}
+                  onAssign={(name, phone)=>assignDriver(o.id, name, phone)}
+                  onMarkAsDelivered={()=>markDelivered(o.id)}
+                />
+              ))}
+            </div>
+          )
+        )}
+
+        {tab === "delivered_today" && (
+          deliveredCount === 0 ? (
+            <EmptyState
+              title="Aún no hay entregas hoy."
+              subtitle="Cuando marques un pedido como entregado, se listará aquí."
+              hint="Puedes ver tiempo y km por entrega si registras la ruta."
+            />
+          ) : (
+            <DeliveredList orders={deliveredToday} />
+          )
+        )}
+      </div>
     </div>
   );
 };
 
 export default DeliveryPanel;
+
+/* ======================= subcomponents ======================= */
+
+const EmptyState: React.FC<{title:string; subtitle?:string; hint?:string}> = ({title, subtitle, hint}) => (
+  <div className="border border-dashed rounded-2xl p-6 text-center bg-white/70">
+    <div className="text-lg font-semibold text-gray-800">{title}</div>
+    {subtitle && <p className="text-sm text-gray-600 mt-1">{subtitle}</p>}
+    {hint && <p className="text-xs text-gray-500 mt-2">{hint}</p>}
+  </div>
+);
+
+const DeliveredList: React.FC<{orders: Order[]}> = ({ orders }) => (
+  <div className="border rounded-2xl bg-white/80 overflow-hidden">
+    <div className="px-4 py-3 border-b text-sm font-semibold">Entregas de hoy</div>
+    <div className="divide-y">
+      {orders.map(o=>{
+        const deliveredAt = (o as any).deliveredAt as number | undefined;
+        const pickupAt = (o as any).pickupAt as number | undefined;
+        const time = deliveredAt && pickupAt && deliveredAt>=pickupAt ? deliveredAt - pickupAt : 0;
+        const km = (o as any).routeMeta?.distance ? (o as any).routeMeta.distance/1000 : 0;
+        return (
+          <div key={o.id} className="px-4 py-3 grid grid-cols-1 md:grid-cols-5 gap-1 text-sm">
+            <div className="font-medium">#{String(o.publicCode ?? o.id)}</div>
+            <div className="text-gray-700">{o.name} · {o.phone ?? "—"}</div>
+            <div className="text-gray-600">{o.address ?? "—"}</div>
+            <div className="text-gray-600">{km ? `${km.toFixed(1)} km` : "—"}</div>
+            <div className="text-gray-600">{time ? `${Math.round(time/60000)} min` : "—"}</div>
+          </div>
+        );
+      })}
+    </div>
+  </div>
+);

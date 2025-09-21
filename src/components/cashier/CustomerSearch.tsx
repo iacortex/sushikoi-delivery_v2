@@ -1,5 +1,5 @@
-import React, { useState, useMemo } from 'react';
-import { Search, User, Phone, MapPin, Clock } from 'lucide-react';
+import React, { useMemo, useState } from "react";
+import { Search, User, Phone, MapPin, Clock } from "lucide-react";
 
 interface Customer {
   name: string;
@@ -12,204 +12,221 @@ interface Customer {
   totalOrders?: number;
   totalSpent?: number;
   lastOrderAt?: number;
+  // si existen en tu store, se usarán para ordenar:
+  createdAt?: number;
+  updatedAt?: number;
 }
 
 interface CustomerSearchProps {
   customers: Customer[];
   onSelectCustomer: (customer: Customer) => void;
+  /** Opcional: limita cantidad mostrada sin cortar por defecto */
+  maxResults?: number;
 }
 
-const formatCLP = (amount: number) => {
-  return new Intl.NumberFormat('es-CL').format(amount);
+/* ============ helpers ============ */
+const toKey = (s?: string) =>
+  (s || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .trim();
+
+const justDigits = (s?: string) => (s || "").replace(/[^\d]/g, "");
+const formatCLP = (n: number) => new Intl.NumberFormat("es-CL").format(n);
+const scoreDate = (c: Customer) =>
+  c.lastOrderAt ?? c.updatedAt ?? c.createdAt ?? 0;
+
+const relTime = (ts?: number) => {
+  if (!ts) return "Primer pedido";
+  const diff = Date.now() - ts;
+  const m = Math.round(diff / 60000);
+  if (m < 60) return `Hace ${m} min`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `Hace ${h} h`;
+  const d = Math.round(h / 24);
+  if (d < 30) return `Hace ${d} día${d !== 1 ? "s" : ""}`;
+  const mo = Math.round(d / 30);
+  return `Hace ${mo} mes${mo !== 1 ? "es" : ""}`;
 };
 
+/* ============ component ============ */
 export const CustomerSearch: React.FC<CustomerSearchProps> = ({
   customers,
   onSelectCustomer,
+  maxResults,
 }) => {
-  const [searchQuery, setSearchQuery] = useState('');
+  const [q, setQ] = useState("");
 
-  // Search customers based on query
-  const filteredCustomers = useMemo(() => {
-    const query = searchQuery.trim().toLowerCase();
-    
-    if (!query) {
-      // Return recent customers if no query
-      return customers
-        .filter(customer => customer.lastOrderAt)
-        .sort((a, b) => (b.lastOrderAt || 0) - (a.lastOrderAt || 0))
-        .slice(0, 6);
+  const list = useMemo(() => {
+    const base = [...customers].sort((a, b) => scoreDate(b) - scoreDate(a));
+
+    // sin query → devolver todo (o hasta maxResults si se pasó)
+    if (!q.trim()) {
+      return typeof maxResults === "number" ? base.slice(0, maxResults) : base;
     }
 
-    // Search by name, phone, or address
-    return customers.filter(customer => 
-      customer.name.toLowerCase().includes(query) ||
-      customer.phone.includes(query) ||
-      customer.street.toLowerCase().includes(query) ||
-      (customer.sector && customer.sector.toLowerCase().includes(query))
-    ).slice(0, 10);
-  }, [searchQuery, customers]);
+    const key = toKey(q);
+    const phoneQuery = justDigits(q);
 
-  const handleSelectCustomer = (customer: Customer) => {
-    onSelectCustomer(customer);
-    setSearchQuery(''); // Clear search after selection
+    const filtered = base.filter((c) => {
+      const name = toKey(c.name);
+      const addr = toKey(
+        `${c.street} ${c.number} ${c.sector ?? ""} ${c.city ?? ""} ${c.references ?? ""}`
+      );
+      const phone = justDigits(c.phone);
+      const matchNameAddr = name.includes(key) || addr.includes(key);
+      const matchPhone = phoneQuery ? phone.includes(phoneQuery) : false;
+      return matchNameAddr || matchPhone;
+    });
+
+    return typeof maxResults === "number"
+      ? filtered.slice(0, maxResults)
+      : filtered;
+  }, [customers, q, maxResults]);
+
+  const handleSelect = (c: Customer) => {
+    onSelectCustomer(c);
+    setQ("");
   };
 
   return (
     <div className="bg-white rounded-lg shadow-sm">
       <div className="p-6 border-b">
-        <h4 className="font-semibold text-gray-700 flex items-center gap-2">
-          <Search size={18} />
-          Buscar Cliente Existente
-        </h4>
+        <div className="flex items-center justify-between">
+          <h4 className="font-semibold text-gray-800 flex items-center gap-2">
+            <Search size={18} />
+            Buscar Cliente Existente
+          </h4>
+          <span className="text-xs text-gray-500">
+            {list.length} resultado{list.length !== 1 ? "s" : ""}
+          </span>
+        </div>
       </div>
-      
+
       <div className="p-6 space-y-4">
         {/* Search Input */}
-        <div className="relative">
-          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-            <Search size={18} className="text-gray-400" />
-          </div>
+        <div className="flex items-center gap-2 border rounded-xl px-3 bg-white w-full shadow-sm">
+          <Search size={16} className="text-gray-500" />
           <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
-            placeholder="Buscar por nombre, teléfono o dirección..."
+            className="h-10 flex-1 outline-none text-sm bg-transparent"
+            placeholder="Nombre, teléfono (+569...), calle, sector, ciudad…"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
             aria-label="Buscar cliente"
           />
-        </div>
-
-        {/* Search Results */}
-        <div className="space-y-3">
-          {filteredCustomers.length === 0 ? (
-            <div className="text-center py-6 text-gray-500">
-              {searchQuery ? (
-                <>
-                  <Search size={48} className="mx-auto mb-2 text-gray-300" />
-                  <p>No se encontraron clientes</p>
-                  <p className="text-sm">Intenta con otro criterio de búsqueda</p>
-                </>
-              ) : (
-                <>
-                  <User size={48} className="mx-auto mb-2 text-gray-300" />
-                  <p>Sin clientes registrados aún</p>
-                  <p className="text-sm">Los clientes aparecerán aquí después del primer pedido</p>
-                </>
-              )}
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {filteredCustomers.map((customer, index) => (
-                <CustomerCard
-                  key={`${customer.phone}-${index}`}
-                  customer={customer}
-                  onSelect={handleSelectCustomer}
-                />
-              ))}
-            </div>
+          {q && (
+            <button
+              className="text-xs text-gray-500 hover:text-gray-700"
+              onClick={() => setQ("")}
+            >
+              limpiar
+            </button>
           )}
         </div>
 
-        {/* Search Tips */}
-        {!searchQuery && (
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-            <h5 className="font-medium text-blue-800 mb-1">💡 Tips de búsqueda:</h5>
-            <ul className="text-sm text-blue-700 space-y-1">
-              <li>• Busca por nombre: "Juan", "María"</li>
-              <li>• Busca por teléfono: "9 1234", "+56"</li>
-              <li>• Busca por dirección: "Mirasol", "Ávalos"</li>
-            </ul>
+        {/* Results */}
+        {list.length === 0 ? (
+          <EmptyState hasQuery={!!q} />
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {list.map((customer, i) => (
+              <CustomerCard
+                key={`${customer.phone}-${i}`}
+                customer={customer}
+                onSelect={() => handleSelect(customer)}
+              />
+            ))}
           </div>
+        )}
+
+        {/* Tips */}
+        {!q && customers.length > (maxResults ?? Infinity) && (
+          <p className="text-xs text-gray-500">
+            Mostrando {maxResults} de {customers.length}. Sube <code>maxResults</code> para ver más.
+          </p>
         )}
       </div>
     </div>
   );
 };
 
-interface CustomerCardProps {
+/* ============ subcomponents ============ */
+
+const EmptyState: React.FC<{ hasQuery: boolean }> = ({ hasQuery }) => (
+  <div className="text-center py-10 text-gray-500">
+    {hasQuery ? (
+      <>
+        <Search size={40} className="mx-auto mb-2 text-gray-300" />
+        <p>No se encontraron clientes</p>
+        <p className="text-sm">Prueba con otro criterio</p>
+      </>
+    ) : (
+      <>
+        <User size={40} className="mx-auto mb-2 text-gray-300" />
+        <p>Sin clientes registrados aún</p>
+        <p className="text-sm">Aparecerán aquí luego del primer pedido</p>
+      </>
+    )}
+  </div>
+);
+
+const CustomerCard: React.FC<{
   customer: Customer;
-  onSelect: (customer: Customer) => void;
-}
-
-const CustomerCard: React.FC<CustomerCardProps> = ({ customer, onSelect }) => {
-  const handleSelect = () => {
-    onSelect(customer);
-  };
-
-  const formatLastOrder = (timestamp?: number): string => {
-    if (!timestamp) return 'Primer pedido';
-    
-    const now = Date.now();
-    const diff = now - timestamp;
-    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-    
-    if (days === 0) return 'Hoy';
-    if (days === 1) return 'Ayer';
-    if (days < 7) return `Hace ${days} días`;
-    if (days < 30) return `Hace ${Math.floor(days / 7)} semanas`;
-    return `Hace ${Math.floor(days / 30)} meses`;
-  };
-
-  return (
-    <div className="border border-gray-200 rounded-lg p-4 hover:shadow-md hover:border-red-300 transition-all duration-200 cursor-pointer group">
-      <div className="flex justify-between items-start">
-        <div className="flex-1">
-          {/* Customer Name */}
-          <div className="flex items-center gap-2 mb-2">
-            <User size={16} className="text-gray-500" />
-            <h6 className="font-semibold text-gray-800 group-hover:text-red-600 transition-colors">
-              {customer.name}
-            </h6>
-          </div>
-
-          {/* Phone */}
-          <div className="flex items-center gap-2 mb-1">
-            <Phone size={14} className="text-gray-400" />
-            <span className="text-sm text-gray-600">{customer.phone}</span>
-          </div>
-
-          {/* Address */}
-          <div className="flex items-center gap-2 mb-2">
-            <MapPin size={14} className="text-gray-400" />
-            <span className="text-sm text-gray-600">
-              {customer.street} {customer.number}
-              {customer.sector && `, ${customer.sector}`}
-            </span>
-          </div>
-
-          {/* Stats */}
-          {(customer.totalOrders || customer.totalSpent) && (
-            <div className="flex items-center gap-4 mt-3 pt-2 border-t border-gray-100">
-              {customer.totalOrders && (
-                <span className="text-xs text-gray-500">
-                  {customer.totalOrders} pedido{customer.totalOrders !== 1 ? 's' : ''}
-                </span>
-              )}
-              {customer.totalSpent && (
-                <span className="text-xs text-gray-500">
-                  ${formatCLP(customer.totalSpent)} total
-                </span>
-              )}
-              {customer.lastOrderAt && (
-                <div className="flex items-center gap-1 text-xs text-gray-500">
-                  <Clock size={10} />
-                  {formatLastOrder(customer.lastOrderAt)}
-                </div>
-              )}
-            </div>
-          )}
+  onSelect: () => void;
+}> = ({ customer, onSelect }) => (
+  <button
+    onClick={onSelect}
+    className="text-left border border-gray-200 rounded-lg p-4 hover:shadow-md hover:border-rose-300 transition-all duration-200 group w-full"
+    aria-label={`Usar cliente ${customer.name}`}
+  >
+    <div className="flex justify-between items-start">
+      <div className="min-w-0">
+        <div className="flex items-center gap-2 mb-1">
+          <User size={16} className="text-gray-500" />
+          <h6 className="font-semibold text-gray-800 group-hover:text-rose-600 truncate">
+            {customer.name}
+          </h6>
         </div>
 
-        {/* Select Button */}
-        <button
-          onClick={handleSelect}
-          className="ml-3 px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white text-sm rounded-md transition-colors flex-shrink-0"
-          aria-label={`Seleccionar cliente ${customer.name}`}
-        >
-          Usar
-        </button>
+        <div className="flex items-center gap-2 text-sm text-gray-700">
+          <Phone size={14} className="text-gray-400" />
+          <span className="truncate">{customer.phone}</span>
+        </div>
+
+        <div className="mt-1 flex items-center gap-2 text-sm text-gray-700">
+          <MapPin size={14} className="text-gray-400" />
+          <span className="truncate">
+            {[customer.street, customer.number].filter(Boolean).join(" ")}
+            {customer.sector ? `, ${customer.sector}` : ""}{" "}
+            {customer.city ? `— ${customer.city}` : ""}
+          </span>
+        </div>
+
+        {(customer.totalOrders || customer.totalSpent || customer.lastOrderAt) && (
+          <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-gray-500">
+            {customer.totalOrders ? (
+              <span>
+                {customer.totalOrders} pedido{customer.totalOrders !== 1 ? "s" : ""}
+              </span>
+            ) : null}
+            {typeof customer.totalSpent === "number" ? (
+              <span>${formatCLP(customer.totalSpent)}</span>
+            ) : null}
+            {customer.lastOrderAt ? (
+              <span className="inline-flex items-center gap-1">
+                <Clock size={10} /> {relTime(customer.lastOrderAt)}
+              </span>
+            ) : null}
+          </div>
+        )}
       </div>
+
+      <span className="ml-3 px-3 py-1.5 bg-rose-600 group-hover:bg-rose-700 text-white text-sm rounded-md transition-colors flex-shrink-0">
+        Usar
+      </span>
     </div>
-  );
-};
+  </button>
+);
+
+export default CustomerSearch;
