@@ -1,5 +1,7 @@
 // src/lib/constants.ts
 
+/** ========= Runtime & ENV helpers ========= */
+
 /** SSR-safe */
 export const isBrowser =
   typeof window !== "undefined" && typeof document !== "undefined";
@@ -11,22 +13,26 @@ const readEnvNum = (key: string): number | undefined => {
   return Number.isFinite(n) ? n : undefined;
 };
 
+/** ========= Origen (coordenadas) ========= */
+
+type LatLng = { lat: number; lng: number };
+
 /** ORIGIN por defecto (Santiago) + ENV override */
 const defaultLat = readEnvNum("VITE_ORIGIN_LAT") ?? -33.4489;
 const defaultLng = readEnvNum("VITE_ORIGIN_LNG") ?? -70.6693;
 
-let ORIGIN_OVERRIDE: { lat: number; lng: number } | null = null;
+let ORIGIN_OVERRIDE: LatLng | null = null;
 
 /** Punto de origen accesible en runtime (con override opcional) */
 export const ORIGIN = new Proxy(
-  { lat: defaultLat, lng: defaultLng },
+  { lat: defaultLat, lng: defaultLng } as LatLng,
   {
     get(_t, prop: "lat" | "lng") {
       if (ORIGIN_OVERRIDE) return ORIGIN_OVERRIDE[prop];
       return prop === "lat" ? defaultLat : defaultLng;
     },
   }
-) as { readonly lat: number; readonly lng: number };
+) as Readonly<LatLng>;
 
 export function setOriginOverride(lat: number, lng: number) {
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
@@ -36,7 +42,8 @@ export function clearOriginOverride() {
   ORIGIN_OVERRIDE = null;
 }
 
-/** Base para tracking cuando no hay window (SSR/tests) */
+/** ========= Tracking / QR ========= */
+
 export const TRACKING_FALLBACK_BASE =
   (import.meta as any)?.env?.VITE_TRACKING_BASE ?? "https://track.local";
 
@@ -49,7 +56,8 @@ export const QR_DEFAULTS: { wazeSize: number; trackingSize: number } = {
   trackingSize: 140,
 };
 
-/** Badges/labels por estado de orden (usado por DeliveryOrderCard) */
+/** ========= Orders UI ========= */
+
 export const ORDER_STATUS_CONFIG: Record<
   string,
   { label: string; color: string }
@@ -60,4 +68,20 @@ export const ORDER_STATUS_CONFIG: Record<
   on_route: { label: "En ruta", color: "bg-blue-100 text-blue-700" },
   delivered: { label: "Entregado", color: "bg-emerald-100 text-emerald-700" },
   cancelled: { label: "Cancelado", color: "bg-red-100 text-red-700" },
-};
+} as const;
+
+/** ========= App constants que faltaban ========= */
+
+/** Intervalo por defecto del ticker (1 segundo) */
+export const TICKER_INTERVAL_MS = 1000 as const;
+
+/** Claves de storage usadas en la app */
+export const STORAGE_KEYS = {
+  CUSTOMERS: "sushikoi.customers.v1",
+  ORDERS: "sushikoi.orders.v1",
+  CART: "sushikoi.cart.v1",
+} as const;
+
+/** Flags de entorno útiles */
+export const IS_DEV = (import.meta as any)?.env?.DEV ?? false;
+export const IS_PROD = (import.meta as any)?.env?.PROD ?? false;
