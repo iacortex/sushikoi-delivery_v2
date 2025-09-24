@@ -1,102 +1,67 @@
-import React, { useMemo, useState } from "react";
-import { CreditCard, Mail, Hash, AlertCircle } from "lucide-react";
+import React, { useEffect, useMemo, useState } from "react";
+import { CreditCard, DollarSign, Building2, CheckCircle2, AlertTriangle } from "lucide-react";
+import { useCashup } from "@/features/cashup/cashupContext";
 
-/* ========= Tipos locales (superset del padre) ========= */
-type ServiceType = "delivery" | "local";
 type PaymentMethod = "efectivo" | "debito" | "credito" | "transferencia" | "mp";
-
-type PayCustomerData = {
-  name?: string;
-  phone?: string;
-  paymentMethod: PaymentMethod;
-  mpChannel?: "delivery" | "local";
-  // nuevos/opcionales
-  rut?: string;
-  receiptEmail?: string;
-  cashGiven?: number | string;
-  transferRef?: string;
-  cardLast4?: string;
-};
-
-type OrderMetaLike = {
-  service?: ServiceType;
-  deliveryFee?: number;
-  extrasTotal?: number;
-  // opcionalmente podrían venir estos, los consideramos si existen:
-  changes?: { fee?: number }[];
-  soy?: { extraFee?: number; feeTotal?: number };
-  ginger?: { extraFee?: number; feeTotal?: number };
-  wasabi?: { extraFee?: number; feeTotal?: number };
-  agridulce?: { extraFee?: number; feeTotal?: number };
-  acevichada?: { extraFee?: number; feeTotal?: number };
-};
 
 type Props = {
   total: number;
-  customerData: PayCustomerData;
-  onChangeCustomerData: (d: PayCustomerData) => void;
+  customerData: {
+    name?: string;
+    phone?: string;
+    rut?: string;
+    paymentMethod: PaymentMethod;
+    mpChannel?: "delivery" | "local";
+  };
+  onChangeCustomerData: (d: Partial<Props["customerData"]>) => void;
   isPaying: boolean;
   onBackToCart: () => void;
   onConfirmPay: () => void;
-  orderMeta?: OrderMetaLike;
+  orderMeta?: any;
 };
 
-/* ========= Utilidades ========= */
-const PAYMENT_METHODS: { value: PaymentMethod; label: string }[] = [
-  { value: "efectivo", label: "Efectivo" },
-  { value: "debito", label: "Tarjeta de Débito" },
-  { value: "credito", label: "Tarjeta de Crédito" },
-  { value: "transferencia", label: "Transferencia" },
-  { value: "mp", label: "Mercado Pago" },
-];
-
-const clp = (n: number) =>
-  new Intl.NumberFormat("es-CL", { maximumFractionDigits: 0 }).format(Math.round(n || 0));
-
-const feeOf = (s?: { extraFee?: number; feeTotal?: number }) => s?.extraFee ?? s?.feeTotal ?? 0;
-const calcExtras = (m?: OrderMetaLike) => {
-  if (!m) return 0;
-  const delivery = m.service === "delivery" ? m.deliveryFee ?? 0 : 0;
-  const changes = (m.changes ?? []).reduce((s, c) => s + (c?.fee ?? 0), 0);
-  const sauces =
-    feeOf(m.soy) + feeOf(m.ginger) + feeOf(m.wasabi) + feeOf(m.agridulce) + feeOf(m.acevichada);
-  return delivery + changes + sauces;
+/* ===== Utils CL ===== */
+const toNumber = (s: string | number) => {
+  if (typeof s === "number") return s;
+  return Number(String(s).replace(/[^\d]/g, "")) || 0;
 };
+const fmtCLP = (n: number) => new Intl.NumberFormat("es-CL").format(Math.round(n || 0));
 
-/* ==== RUT: limpiar, formatear y validar (Mod 11) ==== */
-const cleanRut = (s = "") => s.replace(/[^0-9kK]/g, "").toUpperCase();
-const calcDv = (body: string) => {
-  let sum = 0,
-    m = 2;
+/** RUT helpers */
+function cleanRut(r: string) {
+  return (r || "").toUpperCase().replace(/[.\s]/g, "").replace(/-+/g, "-");
+}
+function splitRut(r: string): [string, string] {
+  const c = cleanRut(r).replace(/[^0-9K\-]/g, "");
+  const [b, dv] = c.includes("-") ? c.split("-") : [c.slice(0, -1), c.slice(-1)];
+  return [b || "", dv || ""];
+}
+function computeDv(body: string) {
+  let sum = 0, mul = 2;
   for (let i = body.length - 1; i >= 0; i--) {
-    sum += parseInt(body[i], 10) * m;
-    m = m === 7 ? 2 : m + 1;
+    sum += parseInt(body[i], 10) * mul;
+    mul = mul === 7 ? 2 : mul + 1;
   }
-  const r = 11 - (sum % 11);
-  return r === 11 ? "0" : r === 10 ? "K" : String(r);
-};
-const isRutValid = (rut?: string) => {
-  const c = cleanRut(rut || "");
-  if (c.length < 2) return false;
-  const body = c.slice(0, -1);
-  const dv = c.slice(-1);
-  return calcDv(body) === dv;
-};
-const formatRut = (rut: string) => {
-  const c = cleanRut(rut);
-  if (!c) return "";
-  const body = c.slice(0, -1);
-  const dv = c.slice(-1);
-  let out = "";
-  for (let i = body.length; i > 0; i -= 3) {
-    const start = Math.max(i - 3, 0);
-    const chunk = body.slice(start, i);
-    out = (start > 0 ? "." : "") + chunk + out;
-  }
-  return `${out}-${dv}`;
-};
+  const res = 11 - (sum % 11);
+  if (res === 11) return "0";
+  if (res === 10) return "K";
+  return String(res);
+}
+export function validateRut(rut: string) {
+  const [body, dv] = splitRut(rut);
+  if (!body || !dv) return false;
+  return computeDv(body) === dv;
+}
+export function formatRut(rut: string) {
+  const [body, dv] = splitRut(rut);
+  if (!body) return "";
+  const rev = body.split("").reverse().join("");
+  const chunks = rev.match(/.{1,3}/g) || [];
+  const withDots = chunks.map(c => c.split("").reverse().join("")).reverse().join(".");
+  return dv ? `${withDots}-${dv}` : withDots;
+}
 
-/* ========= Componente ========= */
+/* ===== Component ===== */
 const PayPanel: React.FC<Props> = ({
   total,
   customerData,
@@ -104,260 +69,233 @@ const PayPanel: React.FC<Props> = ({
   isPaying,
   onBackToCart,
   onConfirmPay,
-  orderMeta,
 }) => {
-  const setField = <K extends keyof PayCustomerData>(k: K, v: PayCustomerData[K]) =>
-    onChangeCustomerData({ ...customerData, [k]: v });
+  // ⬇️ Usamos el contexto como any para que compile aunque no tenga los métodos
+  const cash = useCashup() as any;
+  const current = cash?.current;
 
-  const extras = useMemo(
-    () =>
-      typeof orderMeta?.extrasTotal === "number" ? orderMeta!.extrasTotal : calcExtras(orderMeta),
-    [orderMeta]
-  );
-  const deliveryFee =
-    orderMeta?.service === "delivery" ? Math.max(0, orderMeta?.deliveryFee ?? 0) : 0;
-  const productsSubtotal = Math.max(0, total - (extras || 0));
+  const supportsRegisterSale = typeof cash?.registerSale === "function";
+  const supportsFiscalDoc = typeof cash?.registerFiscalDoc === "function";
 
-  // Estado y validaciones
-  const [rutTouched, setRutTouched] = useState(false);
-  const [emailTouched, setEmailTouched] = useState(false);
+  const [method, setMethod] = useState<PaymentMethod>(customerData.paymentMethod || "debito");
+  const [cashInStr, setCashInStr] = useState<string>("");
+  const [emitBoleta, setEmitBoleta] = useState<boolean>(false);
+  const [rutInput, setRutInput] = useState<string>(customerData.rut || "");
+  const [mpChannel, setMpChannel] = useState<"delivery" | "local" | undefined>(customerData.mpChannel);
 
-  const rutVal = customerData.rut || "";
-  const rutOk = isRutValid(rutVal);
-  const emailVal = (customerData.receiptEmail || "").trim();
-  const emailOk = !emailVal || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailVal);
+  useEffect(() => {
+    onChangeCustomerData({ paymentMethod: method });
+  }, [method, onChangeCustomerData]);
 
-  const needsMpChannel = customerData.paymentMethod === "mp";
-  const canConfirm =
-    !!total && !!rutVal && rutOk && emailOk && (!needsMpChannel || !!customerData.mpChannel);
+  useEffect(() => {
+    onChangeCustomerData({ rut: rutInput });
+  }, [rutInput, onChangeCustomerData]);
+
+  useEffect(() => {
+    onChangeCustomerData({ mpChannel });
+  }, [mpChannel, onChangeCustomerData]);
+
+  const cashIn = useMemo(() => toNumber(cashInStr), [cashInStr]);
+  const change = Math.max(0, Math.round(cashIn - Math.round(total)));
+
+  const canConfirm = useMemo(() => {
+    if (!current) return false;         // exige turno abierto
+    if (total <= 0) return false;
+    if (isPaying) return false;
+    if (method === "efectivo") {
+      if (cashIn <= 0) return false;
+      if (cashIn < Math.round(total)) return false; // no mixtos
+    }
+    if (emitBoleta && rutInput.trim().length > 0 && !validateRut(rutInput)) return false;
+    return true;
+  }, [current, total, isPaying, method, cashIn, emitBoleta, rutInput]);
+
+  const saleMethodMap: Record<PaymentMethod, string> = {
+    efectivo: "EFECTIVO_SISTEMA",
+    debito: "DEBITO_SISTEMA",
+    credito: "CREDITO_SISTEMA",
+    transferencia: "TRANSFERENCIA",
+    mp: "MERCADO_PAGO",
+  };
+
+  const doConfirm = async () => {
+    try {
+      // registra la venta en el arqueo si tu contexto lo soporta
+      if (supportsRegisterSale) {
+        await cash.registerSale({
+          amount: Math.round(total),
+          method: saleMethodMap[method],
+          meta: {
+            channel: method === "mp" ? (mpChannel || "local") : undefined,
+            cashIn: method === "efectivo" ? cashIn : undefined,
+            change: method === "efectivo" ? change : undefined,
+          },
+        });
+      }
+
+      // registro fiscal (e-boleta) si está disponible
+      if (emitBoleta) {
+        const rutFormatted = formatRut(rutInput);
+        if (supportsFiscalDoc) {
+          await cash.registerFiscalDoc({
+            docType: "EBOLETA",
+            amount: Math.round(total),
+            rut: rutFormatted || undefined,
+            items: 1,
+          });
+        } else {
+          // aviso no bloqueante
+          console.warn("[PayPanel] registerFiscalDoc no está implementado en cashupContext");
+        }
+      }
+    } catch (e) {
+      console.error("register sale/fiscal error", e);
+      // No bloqueamos la creación del pedido aunque falle el log
+    }
+    onConfirmPay();
+  };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
-      <div className="bg-white rounded-xl border shadow-sm">
-        {/* Header */}
-        <div className="p-6 border-b flex items-center justify-between">
-          <h3 className="text-xl font-semibold flex items-center gap-2">
-            <CreditCard className="text-rose-600" /> Pago
-          </h3>
-          <div className="text-right text-sm text-gray-600">
-            <div>
-              Cliente:{" "}
-              <b className="text-gray-900">
-                {customerData.name?.trim() || "—"}
-              </b>
-            </div>
-            <div>Tel: {customerData.phone?.trim() || "—"}</div>
+    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <CreditCard size={18} className="text-rose-600" />
+          <h3 className="font-semibold text-gray-900">Pagar Pedido</h3>
+        </div>
+        <div className="text-right">
+          <div className="text-sm text-gray-600">Total a pagar</div>
+          <div className="text-2xl font-extrabold text-rose-600">${fmtCLP(total)}</div>
+        </div>
+      </div>
+
+      {!current && (
+        <div className="mb-4 p-3 rounded border border-yellow-200 bg-yellow-50 text-sm text-yellow-800">
+          Debes <b>abrir la caja</b> desde el panel superior para poder cobrar.
+        </div>
+      )}
+
+      <div className="grid md:grid-cols-3 gap-6">
+        {/* Método de pago */}
+        <div className="md:col-span-1">
+          <div className="text-sm font-medium text-gray-700 mb-2">Método</div>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              className={`px-3 py-2 border rounded-lg text-sm ${method === "efectivo" ? "border-rose-500 text-rose-600 bg-rose-50" : "hover:bg-gray-50"}`}
+              onClick={() => setMethod("efectivo")}
+            >
+              <DollarSign className="inline mr-1" size={14}/> Efectivo
+            </button>
+            <button
+              className={`px-3 py-2 border rounded-lg text-sm ${method === "debito" ? "border-rose-500 text-rose-600 bg-rose-50" : "hover:bg-gray-50"}`}
+              onClick={() => setMethod("debito")}
+            >
+              <CreditCard className="inline mr-1" size={14}/> Débito
+            </button>
+            <button
+              className={`px-3 py-2 border rounded-lg text-sm ${method === "credito" ? "border-rose-500 text-rose-600 bg-rose-50" : "hover:bg-gray-50"}`}
+              onClick={() => setMethod("credito")}
+            >
+              <CreditCard className="inline mr-1" size={14}/> Crédito
+            </button>
+            <button
+              className={`px-3 py-2 border rounded-lg text-sm ${method === "transferencia" ? "border-rose-500 text-rose-600 bg-rose-50" : "hover:bg-gray-50"}`}
+              onClick={() => setMethod("transferencia")}
+            >
+              <Building2 className="inline mr-1" size={14}/> Transferencia
+            </button>
+            <button
+              className={`px-3 py-2 border rounded-lg text-sm col-span-2 ${method === "mp" ? "border-rose-500 text-rose-600 bg-rose-50" : "hover:bg-gray-50"}`}
+              onClick={() => setMethod("mp")}
+            >
+              <CreditCard className="inline mr-1" size={14}/> Mercado Pago
+            </button>
           </div>
+
+          {method === "mp" && (
+            <div className="mt-3">
+              <label className="text-sm text-gray-700">Canal</label>
+              <select
+                className="input mt-1"
+                value={mpChannel || ""}
+                onChange={(e) => setMpChannel((e.target.value as "delivery" | "local") || undefined)}
+              >
+                <option value="">Seleccionar…</option>
+                <option value="local">Local</option>
+                <option value="delivery">Delivery</option>
+              </select>
+            </div>
+          )}
         </div>
 
-        {/* Body */}
-        <div className="p-6 grid grid-cols-1 md:grid-cols-3 gap-6">
-          {/* Columna izquierda: datos + método */}
-          <div className="md:col-span-2 space-y-5">
-            {/* RUT + Email */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  <Hash size={14} className="inline mr-1" />
-                  RUT del cliente <span className="text-rose-600">*</span>
-                </label>
-                <input
-                  value={rutVal}
-                  onChange={(e) => setField("rut", formatRut(e.target.value))}
-                  onBlur={() => setRutTouched(true)}
-                  placeholder="12.345.678-5"
-                  className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-transparent ${
-                    rutTouched && !rutOk ? "border-rose-500" : "border-gray-300"
-                  }`}
-                  inputMode="text"
-                  autoComplete="off"
-                />
-                {rutTouched && !rutOk && (
-                  <p className="mt-1 text-xs text-rose-600 flex items-center gap-1">
-                    <AlertCircle size={12} /> RUT inválido. Revisa dígito verificador.
-                  </p>
-                )}
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  <Mail size={14} className="inline mr-1" />
-                  Email boleta (opcional)
-                </label>
-                <input
-                  value={customerData.receiptEmail || ""}
-                  onChange={(e) => setField("receiptEmail", e.target.value)}
-                  onBlur={() => setEmailTouched(true)}
-                  placeholder="cliente@correo.cl"
-                  className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-transparent ${
-                    emailTouched && !emailOk ? "border-rose-500" : "border-gray-300"
-                  }`}
-                  inputMode="email"
-                  autoComplete="off"
-                />
-                {emailTouched && !emailOk && (
-                  <p className="mt-1 text-xs text-rose-600 flex items-center gap-1">
-                    <AlertCircle size={12} /> Email inválido.
-                  </p>
-                )}
-              </div>
-            </div>
-
-            {/* Método de pago */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Método de pago
-                </label>
-                <select
-                  value={customerData.paymentMethod}
-                  onChange={(e) =>
-                    setField("paymentMethod", e.target.value as PaymentMethod)
-                  }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-transparent"
-                >
-                  {PAYMENT_METHODS.map((m) => (
-                    <option key={m.value} value={m.value}>
-                      {m.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {customerData.paymentMethod === "mp" && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Canal Mercado Pago
-                  </label>
-                  <select
-                    value={customerData.mpChannel || ""}
-                    onChange={(e) => setField("mpChannel", e.target.value as any)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-transparent"
-                  >
-                    <option value="">Selecciona canal…</option>
-                    <option value="local">Local</option>
-                    <option value="delivery">Delivery</option>
-                  </select>
-                  {!customerData.mpChannel && (
-                    <p className="mt-1 text-xs text-gray-500">
-                      Sugerencia por servicio: <b>{orderMeta?.service || "local"}</b>
-                    </p>
-                  )}
+        {/* Efectivo: con cuánto paga */}
+        <div className="md:col-span-1">
+          <div className="text-sm font-medium text-gray-700 mb-2">Detalles</div>
+          {method === "efectivo" ? (
+            <>
+              <label className="text-sm text-gray-700">¿Con cuánto paga?</label>
+              <input
+                className="input mt-1"
+                placeholder="$"
+                inputMode="numeric"
+                value={cashInStr}
+                onChange={(e) => setCashInStr(e.target.value)}
+              />
+              <div className="mt-2 text-sm">
+                <div className="text-gray-600">Total: <b>${fmtCLP(total)}</b></div>
+                <div className={`text-${cashIn >= total ? "green" : "red"}-700`}>
+                  {cashIn >= total ? "Vuelto" : "Falta"}: <b>${fmtCLP(Math.abs(cashIn - Math.round(total)))}</b>
                 </div>
-              )}
-            </div>
-
-            {/* Campos específicos por método */}
-            {customerData.paymentMethod === "efectivo" && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Monto entregado (opcional)
-                </label>
-                <input
-                  type="number"
-                  min={0}
-                  value={customerData.cashGiven ?? ""}
-                  onChange={(e) =>
-                    setField("cashGiven", e.target.value === "" ? "" : Number(e.target.value))
-                  }
-                  placeholder="¿Con cuánto paga?"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-transparent"
-                />
-                {!!customerData.cashGiven && Number(customerData.cashGiven) >= total && (
-                  <p className="mt-1 text-xs text-gray-600">
-                    Vuelto: <b>${clp(Number(customerData.cashGiven) - total)}</b>
-                  </p>
-                )}
               </div>
+            </>
+          ) : (
+            <div className="text-sm text-gray-500">
+              El total se cobrará íntegro con <b>{method.toUpperCase()}</b>. (No se permiten pagos mixtos)
+            </div>
+          )}
+        </div>
+
+        {/* E-Boleta */}
+        <div className="md:col-span-1">
+          <div className="text-sm font-medium text-gray-700 mb-2">E-Boleta</div>
+          <label className="inline-flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={emitBoleta} onChange={(e) => setEmitBoleta(e.target.checked)} />
+            Emitir e-boleta
+          </label>
+
+          <div className="mt-2">
+            <label className="text-sm text-gray-700">RUT (opcional)</label>
+            <input
+              className={`input mt-1 ${emitBoleta && rutInput && !validateRut(rutInput) ? "border-red-400" : ""}`}
+              placeholder="12.345.678-5"
+              value={rutInput}
+              onChange={(e) => setRutInput(e.target.value)}
+              onBlur={() => setRutInput((v) => formatRut(v))}
+            />
+            {emitBoleta && rutInput && !validateRut(rutInput) && (
+              <div className="text-xs text-red-600 mt-1">RUT inválido</div>
             )}
-
-            {customerData.paymentMethod === "transferencia" && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  N°/Comentario de transferencia
-                </label>
-                <input
-                  value={customerData.transferRef || ""}
-                  onChange={(e) => setField("transferRef", e.target.value)}
-                  placeholder="Ej: #OP123456 o comentario"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-transparent"
-                />
+            {!supportsFiscalDoc && emitBoleta && (
+              <div className="mt-2 p-2 rounded bg-yellow-50 border border-yellow-200 text-xs text-yellow-800 flex items-center gap-2">
+                <AlertTriangle size={14}/> Tu <code>cashupContext</code> no implementa <b>registerFiscalDoc</b>. Se creará el pedido igual, pero no quedará el registro fiscal.
               </div>
-            )}
-
-            {(customerData.paymentMethod === "debito" ||
-              customerData.paymentMethod === "credito") && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Últimos 4 dígitos (opcional)
-                </label>
-                <input
-                  value={customerData.cardLast4 || ""}
-                  onChange={(e) =>
-                    setField("cardLast4", e.target.value.replace(/[^0-9]/g, "").slice(0, 4))
-                  }
-                  placeholder="1234"
-                  className="w-28 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-transparent"
-                  inputMode="numeric"
-                />
-              </div>
-            )}
-          </div>
-
-          {/* Columna derecha: resumen */}
-          <div className="border rounded-lg p-4 bg-gray-50">
-            <div className="text-sm text-gray-600">Resumen</div>
-            <div className="mt-2 space-y-1 text-sm">
-              <div className="flex justify-between">
-                <span>Productos</span>
-                <span>${clp(productsSubtotal)}</span>
-              </div>
-              {deliveryFee > 0 && (
-                <div className="flex justify-between">
-                  <span>Delivery</span>
-                  <span>${clp(deliveryFee)}</span>
-                </div>
-              )}
-              {extras - deliveryFee > 0 && (
-                <div className="flex justify-between">
-                  <span>Extras (cambios/salsas)</span>
-                  <span>${clp(extras - deliveryFee)}</span>
-                </div>
-              )}
-            </div>
-            <div className="mt-3 border-t pt-2 flex justify-between text-base font-semibold">
-              <span>Total</span>
-              <span className="text-rose-600">${clp(total)}</span>
-            </div>
-
-            <div className="mt-4 flex gap-2">
-              <button
-                onClick={onBackToCart}
-                className="flex-1 h-10 border rounded-lg hover:bg-gray-100"
-              >
-                Volver al carrito
-              </button>
-              <button
-                onClick={onConfirmPay}
-                disabled={!canConfirm || isPaying}
-                className="flex-1 h-10 bg-rose-600 hover:bg-rose-700 text-white rounded-lg disabled:opacity-50"
-                title={canConfirm ? "Crear pedido" : "Completa los datos requeridos"}
-              >
-                {isPaying ? "Procesando…" : "Confirmar y crear pedido"}
-              </button>
-            </div>
-
-            {!rutVal && (
-              <p className="mt-3 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
-                Ingresa el RUT para emitir boleta con identificación del cliente.
-              </p>
             )}
           </div>
         </div>
+      </div>
+
+      {/* Acciones */}
+      <div className="mt-6 flex items-center justify-between">
+        <button onClick={onBackToCart} className="px-4 py-2 border rounded-lg hover:bg-gray-50">Volver</button>
+        <button
+          disabled={!canConfirm}
+          onClick={doConfirm}
+          className={`px-4 py-2 rounded-lg text-white inline-flex items-center gap-2 ${canConfirm ? "bg-rose-600 hover:bg-rose-700" : "bg-gray-300 cursor-not-allowed"}`}
+        >
+          <CheckCircle2 size={16} /> Confirmar y Cobrar
+        </button>
       </div>
     </div>
   );
 };
 
-export { PayPanel };
 export default PayPanel;

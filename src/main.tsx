@@ -2,54 +2,28 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { App } from './app/App';
 import './styles/index.css';
+import { CashupProvider } from "@/features/cashup/cashupContext";
 
-/** 
- * Activa el fondo pro (negro→rojo) global:
- * - usamos body.koi-super (definido en index.css)
- * - limpiamos la clase antigua 'koi' si existía
- */
 document.body.classList.remove('koi');
 document.body.classList.add('koi-super');
 
-/* Error boundary */
-class ErrorBoundary extends React.Component<
-  { children: React.ReactNode },
-  { hasError: boolean; error?: Error }
-> {
-  constructor(props: { children: React.ReactNode }) {
-    super(props);
-    this.state = { hasError: false };
-  }
-  static getDerivedStateFromError(error: Error) {
-    return { hasError: true, error };
-  }
-  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-    console.error('Error boundary caught an error:', error, errorInfo);
-  }
+class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean; error?: Error }> {
+  constructor(props: { children: React.ReactNode }) { super(props); this.state = { hasError: false }; }
+  static getDerivedStateFromError(error: Error) { return { hasError: true, error }; }
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) { console.error('Error boundary caught an error:', error, errorInfo); }
   render() {
     if (this.state.hasError) {
       return (
         <div className="min-h-screen bg-red-50 flex items-center justify-center p-4">
           <div className="max-w-md w-full bg-white rounded-lg shadow-lg p-6 text-center">
             <div className="text-6xl mb-4">🍣</div>
-            <h1 className="text-2xl font-bold text-gray-800 mb-2">
-              ¡Ups! Algo salió mal
-            </h1>
-            <p className="text-gray-600 mb-4">
-              Ocurrió un error inesperado en la aplicación. 
-              Por favor, recarga la página para continuar.
-            </p>
-            <button onClick={() => window.location.reload()} className="btn-primary w-full">
-              Recargar Página
-            </button>
+            <h1 className="text-2xl font-bold text-gray-800 mb-2">¡Ups! Algo salió mal</h1>
+            <p className="text-gray-600 mb-4">Ocurrió un error inesperado. Recarga la página.</p>
+            <button onClick={() => window.location.reload()} className="btn-primary w-full">Recargar Página</button>
             {process.env.NODE_ENV === 'development' && this.state.error && (
               <details className="mt-4 text-left">
-                <summary className="cursor-pointer text-sm text-gray-500">
-                  Detalles del error (desarrollo)
-                </summary>
-                <pre className="mt-2 text-xs bg-gray-100 p-2 rounded overflow-auto">
-                  {this.state.error.stack}
-                </pre>
+                <summary className="cursor-pointer text-sm text-gray-500">Detalles (dev)</summary>
+                <pre className="mt-2 text-xs bg-gray-100 p-2 rounded overflow-auto">{this.state.error.stack}</pre>
               </details>
             )}
           </div>
@@ -63,8 +37,10 @@ class ErrorBoundary extends React.Component<
 const root = ReactDOM.createRoot(document.getElementById('root') as HTMLElement);
 root.render(
   <React.StrictMode>
-    <ErrorBoundary>
-      <App />
-    </ErrorBoundary>
+    <CashupProvider>
+      <ErrorBoundary>
+        <App />
+      </ErrorBoundary>
+    </CashupProvider>
   </React.StrictMode>
 );
