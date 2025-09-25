@@ -19,7 +19,10 @@ import { CookBoard } from "@/components/cook/CookBoard";
 // ⚠️ el archivo real se llama KitchenNotificacions.tsx
 //    lo aliaseamos a KitchenNotifications para mantener el resto del código igual
 import { KitchenNotifications } from "@/components/cook/KitchenNotificacions";
-import DeliveryPanel from "@/components/delivery/DeliveryPanel"; // ⬅️ nuevo
+import DeliveryPanel from "@/components/delivery/DeliveryPanel";
+
+// Cliente
+import ClientPanel from "@/components/client/ClientPanel";
 
 export function App() {
   useTicker();
@@ -120,17 +123,11 @@ export function App() {
             )}
 
             {userRole === "client" && (
-              <div>
+              <div className="w-full space-y-4">
                 <div className="section-header">
                   <h2 className="section-title">{getRoleTitle()}</h2>
                 </div>
-                <div className="p-4 koi-panel">
-                  <p>Panel de Cliente - En desarrollo</p>
-                  <p className="text-sm text-gray-600 mt-2">
-                    Próximamente: Seguimiento de pedidos, modo tótem, QR
-                    tracking
-                  </p>
-                </div>
+                <ClientPanel />
               </div>
             )}
           </div>

@@ -1,225 +1,138 @@
-import React, { useState, useEffect } from 'react';
-import { Search, Monitor, Smartphone, QrCode } from 'lucide-react';
-import { useOrders } from '@/features/orders/useOrders';
-import { useTicker } from '@/hooks/useTicker';
-import { OrderTracker } from './OrderTracker';
-import { TotemBoard } from './TotemBoard';
-import { OrderSearch } from './OrderSearch';
+import React, { useEffect, useMemo, useState } from "react";
+import { Monitor, UserSearch, QrCode, X, ArrowLeftRight, Info } from "lucide-react";
+import { useOrders } from "@/features/orders/useOrders";
+import type { Order } from "@/types";
+import { OrderSearch } from "./OrderSearch";
+import { OrderTracker } from "./OrderTracker";
+import { TotemBoard } from "./TotemBoard";
+import { shortCode } from "@/lib/format";
 
-type ClientMode = 'search' | 'totem';
+// Panel del cliente: buscar pedido, ver tracking y (opcional) tablero tipo tótem.
+const ClientPanel: React.FC = () => {
+  const { orders } = useOrders();
+  const [tracked, setTracked] = useState<Order | null>(null);
+  const [showTotem, setShowTotem] = useState<boolean>(false);
 
-export const ClientPanel: React.FC = () => {
-  // Real-time updates
-  useTicker();
-  
-  // State
-  const [mode, setMode] = useState<ClientMode>('search');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [foundOrder, setFoundOrder] = useState<any>(null);
-  
-  // Orders data
-  const { orders, getOrderByCode } = useOrders();
-
-  // Check for direct order link from URL hash
+  // Soporta deep-link/hash: #order-ABCD
   useEffect(() => {
-    const checkForOrderInUrl = () => {
-      const hash = window.location.hash;
-      const match = hash.match(/#order-(\w{4,6})/i);
-      
-      if (match) {
-        const code = match[1];
-        const order = getOrderByCode(code);
-        
-        if (order) {
-          setFoundOrder(order);
-          setSearchQuery(code);
-          setMode('search');
-          
-          // Clean URL hash after processing
-          window.history.replaceState(null, '', window.location.pathname);
-        }
-      }
-    };
+    const h = window.location.hash || "";
+    const m = h.match(/#order\-([A-Za-z0-9]+)/);
+    if (!m) return;
+    const code = (m[1] || "").toUpperCase();
+    // Busca por "shortCode" (últimos 4 chars base36 / helper shortCode)
+    const found = orders.find((o) => shortCode(o.id).toUpperCase() === code);
+    if (found) setTracked(found);
+  }, [orders]);
 
-    checkForOrderInUrl();
-    
-    // Listen for hash changes (e.g., when QR codes are scanned)
-    window.addEventListener('hashchange', checkForOrderInUrl);
-    return () => window.removeEventListener('hashchange', checkForOrderInUrl);
-  }, [getOrderByCode]);
-
-  const handleOrderFound = (order: any) => {
-    setFoundOrder(order);
-  };
-
-  const handleClearSearch = () => {
-    setFoundOrder(null);
-    setSearchQuery('');
-  };
-
-  const modes = [
-    {
-      key: 'search' as const,
-      label: 'Seguimiento',
-      icon: Search,
-      description: 'Buscar y seguir pedido',
-    },
-    {
-      key: 'totem' as const,
-      label: 'Modo Tótem',
-      icon: Monitor,
-      description: 'Vista de pantalla completa',
-    },
-  ];
+  const activeOrders = useMemo(() => orders.filter(o => o.status !== "delivered"), [orders]);
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6">
-      {/* Header with Mode Selection */}
-      <div className="card">
-        <div className="card-body">
-          <div className="flex items-center justify-between mb-4">
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-rose-500 to-pink-500 text-white flex items-center justify-center text-xl">🙋</div>
             <div>
-              <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
-                <Smartphone className="text-blue-600" />
-                Panel de Cliente
-              </h2>
-              <p className="text-gray-600 mt-1">
-                Seguimiento de pedidos en tiempo real
-              </p>
-            </div>
-
-            {/* Mode Toggle */}
-            <div className="bg-gray-100 rounded-lg p-1 flex">
-              {modes.map((modeOption) => {
-                const Icon = modeOption.icon;
-                const isActive = mode === modeOption.key;
-                
-                return (
-                  <button
-                    key={modeOption.key}
-                    onClick={() => setMode(modeOption.key)}
-                    className={`
-                      flex items-center gap-2 px-4 py-2 text-sm rounded-md transition-all duration-200
-                      ${isActive 
-                        ? 'bg-blue-600 text-white shadow-md' 
-                        : 'text-gray-700 hover:bg-gray-200'
-                      }
-                    `}
-                    title={modeOption.description}
-                  >
-                    <Icon size={16} />
-                    <span className="hidden sm:inline">{modeOption.label}</span>
-                  </button>
-                );
-              })}
+              <h2 className="text-xl md:text-2xl font-bold text-gray-900">Panel de Cliente</h2>
+              <p className="text-gray-600 text-sm">Rastrea tu pedido y compártelo por QR o link</p>
             </div>
           </div>
-
-          {/* Mode Description */}
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-            <div className="flex items-center gap-2 text-blue-800">
-              <QrCode size={16} />
-              <span className="font-medium">
-                {mode === 'search' 
-                  ? 'Busca tu pedido por teléfono o código QR'
-                  : 'Vista de tótem para mostrar todos los pedidos activos'
-                }
-              </span>
-            </div>
+          <div className="flex items-center gap-2">
+            <button
+              className={`px-3 py-2 rounded-lg border text-sm transition ${showTotem ? "bg-gray-900 text-white border-gray-900" : "bg-white hover:bg-gray-50"}`}
+              title="Mostrar tablero tipo tótem"
+              onClick={() => setShowTotem((v) => !v)}
+            >
+              <Monitor size={16} className="inline mr-2" />
+              {showTotem ? "Ocultar Tótem" : "Ver Tótem"}
+            </button>
           </div>
         </div>
       </div>
 
-      {/* Content Based on Mode */}
-      {mode === 'search' ? (
-        <div className="space-y-6">
-          {/* Search Interface */}
-          {!foundOrder && (
-            <OrderSearch
-              searchQuery={searchQuery}
-              onSearchQueryChange={setSearchQuery}
-              onOrderFound={handleOrderFound}
-              orders={orders}
-            />
-          )}
+      {/* Barra informativa rápida */}
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800 flex items-start gap-2">
+        <Info size={16} className="mt-0.5" />
+        <div>
+          <b>Sugerencia:</b> puedes buscar por <b>teléfono</b> o por <b>código corto</b> (ej: ABCD). 
+          Si ya tenías el link, el sistema arranca con el pedido seleccionado automáticamente.
+        </div>
+      </div>
 
-          {/* Order Tracker */}
-          {foundOrder && (
-            <OrderTracker
-              order={foundOrder}
-              onClear={handleClearSearch}
-            />
-          )}
-
-          {/* Instructions */}
-          {!foundOrder && (
-            <div className="card">
-              <div className="card-body">
-                <h3 className="text-lg font-semibold text-gray-800 mb-4">
-                  📱 Cómo seguir tu pedido
-                </h3>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="space-y-4">
-                    <h4 className="font-medium text-gray-700">Por Teléfono:</h4>
-                    <div className="bg-gray-50 rounded-lg p-4">
-                      <p className="text-sm text-gray-600 mb-2">
-                        Ingresa tu número de teléfono tal como lo diste al hacer el pedido:
-                      </p>
-                      <code className="text-sm bg-gray-200 px-2 py-1 rounded">
-                        +56 9 1234 5678
-                      </code>
-                    </div>
-                  </div>
-
-                  <div className="space-y-4">
-                    <h4 className="font-medium text-gray-700">Por Código:</h4>
-                    <div className="bg-gray-50 rounded-lg p-4">
-                      <p className="text-sm text-gray-600 mb-2">
-                        Usa el código de 5 dígitos de tu boleta o confirmación:
-                      </p>
-                      <code className="text-sm bg-gray-200 px-2 py-1 rounded">
-                        12345
-                      </code>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="mt-6 bg-green-50 border border-green-200 rounded-lg p-4">
-                  <h4 className="font-medium text-green-800 mb-2">🎯 Código QR</h4>
-                  <p className="text-sm text-green-700">
-                    Si tienes un código QR de seguimiento, simplemente escanéalo con tu teléfono 
-                    y serás dirigido automáticamente al estado de tu pedido.
-                  </p>
-                </div>
-              </div>
+      {/* Búsqueda + tracking */}
+      {!tracked ? (
+        <div className="grid lg:grid-cols-2 gap-6">
+          {/* Buscar pedido */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <UserSearch size={18} className="text-gray-700" />
+              <h3 className="font-semibold text-gray-800">Buscar pedido</h3>
             </div>
-          )}
+            <OrderSearch
+              orders={orders}
+              onResult={(o) => setTracked(o)}
+            />
+          </div>
+
+          {/* Vista mini de pedidos activos */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <QrCode size={18} className="text-gray-700" />
+              <h3 className="font-semibold text-gray-800">Pedidos activos (hoy)</h3>
+            </div>
+            {activeOrders.length === 0 ? (
+              <div className="text-sm text-gray-500">No hay pedidos activos por ahora.</div>
+            ) : (
+              <ul className="space-y-2">
+                {activeOrders.slice(0, 6).map((o) => (
+                  <li key={o.id} className="flex items-center justify-between bg-gray-50 rounded-lg p-3">
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium text-gray-800 truncate">
+                        {o.name} • #{String(o.id).slice(-4)}
+                      </div>
+                      <div className="text-xs text-gray-600">
+                        {o.status.toUpperCase()} • {o.paymentStatus === "paid" ? "PAGADO" : "POR PAGAR"}
+                      </div>
+                    </div>
+                    <button
+                      className="text-rose-600 hover:text-rose-700 text-sm px-2 py-1 rounded-lg"
+                      onClick={() => setTracked(o)}
+                    >
+                      Ver
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         </div>
       ) : (
-        <TotemBoard orders={orders} />
-      )}
-
-      {/* Quick Stats Footer */}
-      <div className="card">
-        <div className="card-body">
-          <div className="flex items-center justify-between text-sm">
-            <div className="flex items-center gap-4">
-              <span className="text-gray-600">
-                📊 Total de pedidos hoy: <strong>{orders.length}</strong>
-              </span>
-              <span className="text-gray-600">
-                ✅ Entregados: <strong>{orders.filter(o => o.status === 'delivered').length}</strong>
-              </span>
-            </div>
-            
-            <div className="flex items-center gap-2 text-gray-500">
-              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-              <span>Actualizando en tiempo real</span>
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <button
+              onClick={() => setTracked(null)}
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border hover:bg-gray-50"
+            >
+              <ArrowLeftRight size={16} />
+              Cambiar pedido
+            </button>
+            <div className="text-sm text-gray-600">
+              Código corto: <b className="font-mono">{shortCode(tracked.id)}</b>
             </div>
           </div>
+          <OrderTracker order={tracked} onClear={() => setTracked(null)} />
         </div>
-      </div>
+      )}
+
+      {/* Tótem (opcional) */}
+      {showTotem && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
+          <TotemBoard orders={orders} />
+        </div>
+      )}
     </div>
   );
 };
+
+export default ClientPanel;

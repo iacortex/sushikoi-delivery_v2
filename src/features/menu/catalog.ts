@@ -23,8 +23,7 @@ export const MENU_CATALOG: Record<MenuId, MenuItem> = {
 
   1101: { id: 1101, name: "ACEVICHADO ROLL PREMIUM",         price:  9680, time: 10, desc: "Envuelto palta + ceviche, salsa acevichada",    img: "🔥", soyIncluded: 1 },
   1201: { id: 1201, name: "AVOCADO (ENV PALTA)",             price:  5990, time:  9, desc: "Queso crema, salmón",                           img: "🥑", soyIncluded: 1 },
-  1202: { id: 1202, name: "FURAY ( Panko)",                  price:  6390, time: 11, desc: "Salmón, queso, cebollín",                       img: "🍤", soyIncluded: 1 },
-  1203: { id: 1203, name: "PANKO POLLO QUESO PALTA",         price:  6200, time: 10, desc: "Pollo panko, queso, palta",                     img: "🍗", soyIncluded: 1 },
+  1202: { id: 1202, name: "FURAY ( Panko)",                         price:  6200, time: 10, desc: "Pollo panko, queso, palta",                     img: "🍗", soyIncluded: 1 },
   1204: { id: 1204, name: "TORI (FRITO)",                    price:  5800, time: 10, desc: "Pollo, queso, morrón",                           img: "🍗", soyIncluded: 1 },
 
   1301: { id: 1301, name: "Korokes Salmón, queso (5u)",      price:  4690, time:  8, desc: "Croquetas crujientes de salmón",                img: "🟠", soyIncluded: 0 },
