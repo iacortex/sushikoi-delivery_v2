@@ -37,6 +37,10 @@ import { useCashup } from "@/features/cashup/cashupContext";
 import { getCashupCompat } from "@/features/cashup/compat";
 import { computeETA } from "@/features/orders/eta";
 
+// Modales de caja
+import CashShiftModal from "@/features/cashup/CashShiftModal";
+import CashOpsQuickModal from "@/features/cashup/CashOpsQuickModal";
+
 const TOTEM_MODE = true;
 
 /* ===== Tipos UI (locales) ===== */
@@ -119,8 +123,7 @@ interface OrderMetaLocal {
   acevichada?: SauceLine;
   extrasTotal?: number;
   note?: string;
-  // extra: propina en efectivo del PayPanel (opcional)
-  tipCash?: number;
+  tipCash?: number; // propina cash desde PayPanel
 }
 interface AddToCartPayload {
   promotionId: number;
@@ -148,10 +151,6 @@ const timeAgo = (ts: number) => {
   if (m < 60) return `${m}m`;
   return `${Math.floor(m / 60)}h`;
 };
-// parsea "$ 10.000" -> 10000
-const toNumber = (s: string | number) =>
-  typeof s === "number" ? s : Number(String(s).replace(/[^\d]/g, "")) || 0;
-
 const EXTRAS_ITEM_ID = -777;
 const extrasFromMeta = (m?: OrderMetaLocal) => {
   if (!m) return 0;
@@ -164,7 +163,7 @@ const extrasFromMeta = (m?: OrderMetaLocal) => {
     (m.agridulce?.feeTotal ?? m.agridulce?.extraFee ?? 0) +
     (m.acevichada?.feeTotal ?? m.acevichada?.extraFee ?? 0);
   const tips = m.tipCash ?? 0;
-  return delivery + changes + sauces + tips; // incluimos propina en extras/boleta
+  return delivery + changes + sauces + tips;
 };
 const buildExtrasLabel = (m?: OrderMetaLocal): string => {
   if (!m) return "Extras (delivery/cambios/salsas)";
@@ -191,10 +190,7 @@ interface Notification {
   message: string;
   timestamp: number;
 }
-const Toast: React.FC<{ n: Notification; onClose: (id: number) => void }> = ({
-  n,
-  onClose,
-}) => {
+const Toast: React.FC<{ n: Notification; onClose: (id: number) => void }> = ({ n, onClose }) => {
   useEffect(() => {
     const t = setTimeout(() => onClose(n.id), 5000);
     return () => clearTimeout(t);
@@ -249,68 +245,13 @@ function enforceOneProteinChange(
 }
 
 /* =========================================================
-   MODAL: Abrir Turno de Caja
-   ========================================================= */
-const OpenShiftModal: React.FC<{
-  open: boolean;
-  onClose: () => void;
-  onConfirm: (openingCash: number) => void;
-}> = ({ open, onClose, onConfirm }) => {
-  const [openingCashStr, setOpeningCashStr] = useState<string>("0");
-
-  useEffect(() => {
-    if (open) setOpeningCashStr("0");
-  }, [open]);
-
-  if (!open) return null;
-
-  const openingCash = toNumber(openingCashStr);
-
-  return (
-    <KioskModal
-      open={open}
-      onClose={onClose}
-      title="Abrir turno de caja"
-      subtitle="Ingresa el efectivo inicial"
-      designWidth={420}
-      designHeight={260}
-    >
-      <div className="space-y-3">
-        <label className="text-sm text-gray-700">Efectivo de apertura</label>
-        <input
-          className="w-full border rounded-lg px-3 py-2"
-          placeholder="$"
-          inputMode="numeric"
-          value={openingCashStr}
-          onChange={(e) => setOpeningCashStr(e.target.value)}
-        />
-        <div className="text-sm text-gray-600">
-          Monto: <b>${formatCLP(openingCash)}</b>
-        </div>
-        <div className="flex justify-end gap-2 pt-2">
-          <button onClick={onClose} className="px-3 py-2 border rounded-lg hover:bg-gray-50">
-            Cancelar
-          </button>
-          <button
-            onClick={() => onConfirm(Math.max(0, openingCash))}
-            className="px-4 py-2 rounded-lg text-white bg-rose-600 hover:bg-rose-700"
-          >
-            Abrir turno
-          </button>
-        </div>
-      </div>
-    </KioskModal>
-  );
-};
-
-/* =========================================================
    MODAL DETALLE — Boleta + Stepper + Extras + propina
    ========================================================= */
-const OrderDetailModal: React.FC<{
-  open: boolean;
-  onClose: () => void;
-  order?: OrderUI;
-}> = ({ open, onClose, order }) => {
+const OrderDetailModal: React.FC<{ open: boolean; onClose: () => void; order?: OrderUI }> = ({
+  open,
+  onClose,
+  order,
+}) => {
   if (!order) return null;
 
   const STAGES = [
@@ -390,10 +331,7 @@ const OrderDetailModal: React.FC<{
 
   const cartWithoutExtras = (order.cart || []).filter((it) => it.id !== EXTRAS_ITEM_ID);
 
-  const itemsSubtotal = cartWithoutExtras.reduce(
-    (s, it) => s + it.discountPrice * it.quantity,
-    0
-  );
+  const itemsSubtotal = cartWithoutExtras.reduce((s, it) => s + it.discountPrice * it.quantity, 0);
 
   const dt = new Date(order.createdAt || Date.now()).toLocaleString("es-CL", {
     dateStyle: "short",
@@ -496,9 +434,7 @@ const OrderDetailModal: React.FC<{
                       <span className="truncate max-w-[210px]">
                         {it.name}
                         {it.items?.length
-                          ? ` — ${it.items.slice(0, 2).join(", ")}${
-                              it.items.length > 2 ? "…" : ""
-                            }`
+                          ? ` — ${it.items.slice(0, 2).join(", ")}${it.items.length > 2 ? "…" : ""}`
                           : ""}
                       </span>
                       <span className="text-gray-500">x{it.quantity}</span>
@@ -571,17 +507,41 @@ type Props = {
   onOrderCreated?: () => void;
 };
 
-const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
-  const [activeTab, setActiveTab] = useState<CashierTab>(
-    TOTEM_MODE ? "promotions" : "dashboard"
-  );
+// mapeo método de pago → método de caja
+type SaleMethodKey =
+  | "EFECTIVO_SISTEMA"
+  | "DEBITO_SISTEMA"
+  | "CREDITO_SISTEMA"
+  | "POS_DEBITO"
+  | "POS_CREDITO"
+  | "TRANSFERENCIA"
+  | "MERCADO_PAGO";
 
-  // Carrito
+const paymentToSaleMethod: Record<PaymentMethod, SaleMethodKey> = {
+  efectivo: "EFECTIVO_SISTEMA",
+  debito: "DEBITO_SISTEMA",
+  credito: "CREDITO_SISTEMA",
+  transferencia: "TRANSFERENCIA",
+  mp: "MERCADO_PAGO",
+};
+
+// Cajeros fijos y persistencia
+const CASHIERS = ["Camila Yáñez", "Francisco Ponce", "Paola Finol"] as const;
+const CASHIER_LS_KEY = "__KOI_CASHIER_NAME__";
+
+const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
+  const [activeTab, setActiveTab] = useState<CashierTab>(TOTEM_MODE ? "promotions" : "dashboard");
+
+  // Cajero activo
+  const [cashierName, setCashierName] = useState<string>(() => localStorage.getItem(CASHIER_LS_KEY) || CASHIERS[0]);
+  useEffect(() => {
+    if (cashierName) localStorage.setItem(CASHIER_LS_KEY, cashierName);
+  }, [cashierName]);
+
+  // Carrito y UI
   const [cart, setCart] = useState<CartItem[]>([]);
   const [selectedOrder, setSelectedOrder] = useState<OrderUI | undefined>(undefined);
   const [showDetail, setShowDetail] = useState(false);
-
-  // Órdenes recién creadas (buffer local)
   const [recentOrders, setRecentOrders] = useState<OrderUI[]>([]);
 
   // Cliente + errores + extras
@@ -654,8 +614,7 @@ const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
     const description = item?.desc ?? "Item agregado desde Promociones";
 
     const existing = cart.find((it) => it.id === p.promotionId);
-    if (existing)
-      setCart(cart.map((it) => (it.id === p.promotionId ? { ...it, quantity: it.quantity + 1 } : it)));
+    if (existing) setCart(cart.map((it) => (it.id === p.promotionId ? { ...it, quantity: it.quantity + 1 } : it)));
     else
       setCart((prev) => [
         ...prev,
@@ -700,13 +659,11 @@ const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
         },
         agridulce: {
           qty: (prev?.agridulce?.qty || 0) + (p.agridulce?.qty || 0),
-          feeTotal:
-            (prev?.agridulce?.feeTotal || 0) + (p.agridulce?.feeTotal ?? p.agridulce?.extraFee ?? 0),
+          feeTotal: (prev?.agridulce?.feeTotal || 0) + (p.agridulce?.feeTotal ?? p.agridulce?.extraFee ?? 0),
         },
         acevichada: {
           qty: (prev?.acevichada?.qty || 0) + (p.acevichada?.qty || 0),
-          feeTotal:
-            (prev?.acevichada?.feeTotal || 0) + (p.acevichada?.feeTotal ?? p.acevichada?.extraFee ?? 0),
+          feeTotal: (prev?.acevichada?.feeTotal || 0) + (p.acevichada?.feeTotal ?? p.acevichada?.extraFee ?? 0),
         },
         note: p.note ?? prev?.note,
         tipCash: prev?.tipCash ?? 0,
@@ -726,7 +683,7 @@ const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
       p.drinks.forEach((d, idx) => {
         if (!d || !d.quantity) return;
         const id = Date.now() + idx;
-        const bev = {
+        const bev: CartItem = {
           id,
           name: d.name,
           description: "Bebida",
@@ -738,7 +695,7 @@ const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
           popular: false,
           cookingTime: 0,
           quantity: d.quantity,
-        } as CartItem;
+        };
         setCart((prev) => [...prev, bev]);
       });
     }
@@ -746,7 +703,7 @@ const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
     notify("success", "Detalle agregado (delivery/cambios/salsas)");
   };
 
-  // 👉 Sincroniza una línea "Extras" dentro del carrito al cambiar meta
+  // sincroniza línea "Extras"
   useEffect(() => {
     const totalExtras = extrasFromMeta(orderMeta);
     setCart((prev) => {
@@ -785,15 +742,11 @@ const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
     notify("info", "Carrito vaciado");
   };
 
-  // === ETA inteligente (capacidad cocina)
+  // === ETA inteligente
   const estimatedCooking = useMemo(() => {
     const active = (ordersApi.orders || []).filter((o: any) => o.status !== "delivered");
     const queue = active.map((o: any) =>
-      (o.cart || []).map((it: any) => ({
-        id: it.id,
-        name: it.name,
-        cookingTime: it.cookingTime,
-      }))
+      (o.cart || []).map((it: any) => ({ id: it.id, name: it.name, cookingTime: it.cookingTime }))
     );
     const newCart = cart.map((it) => ({ id: it.id, name: it.name, cookingTime: it.cookingTime }));
     return computeETA(queue as any, newCart as any);
@@ -814,7 +767,7 @@ const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
     return Object.keys(e).length === 0;
   };
 
-  // Lista a mostrar en “Órdenes”: recientes + store (únicos)
+  // Órdenes a mostrar (recientes + store único)
   const displayedOrders = useMemo(() => {
     const map = new Map<number, OrderUI>();
     for (const o of recentOrders) map.set(o.id, o);
@@ -822,6 +775,37 @@ const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
     return Array.from(map.values());
   }, [recentOrders, ordersApi.orders]);
 
+  // ======= Caja (Cashup) =======
+  const cashCtx = useCashup() as any;
+  const cash = getCashupCompat(cashCtx);
+
+  // Shift handlers + modales
+  const [openingCashInput, setOpeningCashInput] = useState<string>("");
+  const [closingNote, setClosingNote] = useState<string>("");
+  const handleOpenShift = () => {
+    const amount = Number(String(openingCashInput).replace(/[^\d]/g, "")) || 0;
+    const sess = cash.openSession({ openingCash: amount, openedBy: cashierName || "Cajero", note: "Apertura desde CashierPanel" });
+    if (sess?.id) {
+      notify("success", `Turno abierto por ${cashierName} con $${formatCLP(amount)}`);
+      setOpeningCashInput("");
+    } else {
+      notify("error", "No se pudo abrir el turno");
+    }
+  };
+  const handleCloseShift = () => {
+    const note = closingNote?.trim() ? `${closingNote} — cier. por ${cashierName}` : `Cierre por ${cashierName}`;
+    const closed = cash.closeSession?.(note);
+    if (closed?.closedAt) {
+      notify("success", `Turno cerrado por ${cashierName}`);
+      setClosingNote("");
+    } else {
+      notify("error", "No se pudo cerrar el turno");
+    }
+  };
+  const [showShiftModal, setShowShiftModal] = useState(false);
+  const [showOpsModal, setShowOpsModal] = useState(false);
+
+  // Crear orden
   const createOrder = async () => {
     if (!validate()) {
       notify("error", "Complete todos los campos requeridos");
@@ -831,8 +815,6 @@ const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
     setIsCreatingOrder(true);
     try {
       const coords = { lat: -41.4717, lng: -72.9411 };
-
-      // Propina que dejó el PayPanel (se limpia abajo)
       const tipFromPayPanel = (window as any).__KOI_LAST_TIP__ || 0;
 
       const payload = {
@@ -845,7 +827,6 @@ const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
       };
 
       const created = await ordersApi.createOrder(payload as any);
-
       if (!created || !created.id) {
         notify("error", "No se pudo crear el pedido (respuesta inválida)");
         return;
@@ -858,6 +839,21 @@ const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
         meta: created.meta ?? (payload.meta as any),
         estimatedTime: estimatedCooking || created.estimatedTime || 15,
       } as OrderUI;
+
+      // Registrar venta/propina en caja
+      try {
+        const saleMethod = paymentToSaleMethod[customerData.paymentMethod] || "EFECTIVO_SISTEMA";
+        cash.registerSale?.(saleMethod as any, created.total || 0, { by: cashierName });
+
+        const tipCashSum = (orderMeta?.tipCash ?? 0) + (Number(tipFromPayPanel) || 0);
+        if (tipCashSum > 0) {
+          (cashCtx as any)?.addCashTip?.(tipCashSum, { by: cashierName });
+        }
+        // Si emites e-boleta aquí:
+        // cash.registerFiscalDoc?.(created.total || 0, 1);
+      } catch (e) {
+        console.warn("No se pudo registrar venta/propina en caja:", e);
+      }
 
       setRecentOrders((prev) => [createdWithMeta, ...prev]);
       setSelectedOrder(createdWithMeta);
@@ -913,12 +909,10 @@ const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
   const ready = ordersApi.orders.filter((o) => o.status === "ready").length;
 
   /* ====== Arqueo (en vivo) ====== */
-  const cashCtx = useCashup() as any;
-  const cash = getCashupCompat(cashCtx);
-  const current = cash.current;
+  const cashExpected = (cash.getExpectedCash && cash.getExpectedCash(cash.current)) || 45000;
 
-  const byMethod: Record<string, number> =
-    (current?.ops?.salesRuntime?.byMethod as Record<string, number>) || {};
+  const current = cash.current;
+  const byMethod: Record<string, number> = (current?.ops?.salesRuntime?.byMethod as Record<string, number>) || {};
 
   const totalsByMethod = {
     EFECTIVO_SISTEMA: byMethod["EFECTIVO_SISTEMA"] || 0,
@@ -929,13 +923,7 @@ const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
     TRANSFERENCIA: byMethod["TRANSFERENCIA"] || 0,
     MERCADO_PAGO: byMethod["MERCADO_PAGO"] || 0,
   };
-  const cashExpected =
-    (cash.getExpectedCash && cash.getExpectedCash(current)) || 45000;
-
-  const gastos = (current?.ops?.expenses || []).reduce(
-    (acc: number, e: any) => acc + (e?.amount || 0),
-    0
-  );
+  const gastos = (current?.ops?.expenses || []).reduce((acc: number, e: any) => acc + (e?.amount || 0), 0);
   const retiros = current?.ops?.withdrawals || 0;
   const propinas = current?.ops?.tips?.cashTips || 0;
   const eboletaAmount = current?.ops?.fiscal?.eboletaAmount || 0;
@@ -955,9 +943,6 @@ const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
     setActiveTab("cart");
     setTimeout(() => setActiveTab("customer"), 140);
   };
-
-  // ===== Estado modal abrir turno
-  const [openShiftOpen, setOpenShiftOpen] = useState(false);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
@@ -979,35 +964,95 @@ const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
               <div>
                 <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
                   Panel de Cajero/Vendedor{" "}
-                  <span className="text-sm bg-green-100 text-green-700 px-2 py-1 rounded-full">
-                    En línea
-                  </span>
+                  <span className="text-sm bg-green-100 text-green-700 px-2 py-1 rounded-full">En línea</span>
                 </h1>
-                <p className="text-gray-600">
-                  Flujo: Promociones → Carrito → Cliente → Pagar
-                </p>
+                <p className="text-gray-600">Flujo: Promociones → Carrito → Cliente → Pagar</p>
               </div>
             </div>
             <div className="text-right">
+              <div className="flex items-center gap-2 justify-end mb-1">
+                <span className="text-sm text-gray-500">👤</span>
+                <select
+                  className="border rounded-md text-sm px-2 py-1"
+                  value={cashierName}
+                  onChange={(e) => setCashierName(e.target.value)}
+                >
+                  {CASHIERS.map((n) => (
+                    <option key={n} value={n}>
+                      {n}
+                    </option>
+                  ))}
+                </select>
+              </div>
               <p className="text-sm text-gray-500">Rol: Cajero</p>
               <p className="text-sm text-gray-500">📍 Sushikoi — Puerto Montt</p>
-              <p className="text-xs text-gray-400">
-                🕒 {now.toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit" })}
-              </p>
+              <p className="text-xs text-gray-400">🕒 {now.toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit" })}</p>
+            </div>
+          </div>
 
-              {/* Aviso rápido si la caja está cerrada */}
-              {!current && (
-                <div className="mt-2">
-                  <button
-                    className="px-3 py-1.5 rounded-lg text-sm bg-rose-600 text-white hover:bg-rose-700"
-                    onClick={() => setOpenShiftOpen(true)}
-                    title="Abrir turno de caja"
-                  >
-                    Abrir caja
+          {/* ShiftBar — abrir/cerrar turno + accesos */}
+          <div className="mt-4 p-3 rounded-lg border bg-gray-50">
+            {cash.current ? (
+              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="px-2 py-0.5 text-xs rounded-full bg-emerald-100 text-emerald-700 border border-emerald-300">
+                    Turno abierto
+                  </span>
+                  <span className="text-sm text-gray-700">
+                    Apertura: <b>${formatCLP(cash.current.ops.openingCash || 0)}</b> • Inició:{" "}
+                    {new Date(cash.current.openedAt).toLocaleString("es-CL")} •{" "}
+                    <i>{cash.current.openedBy || "—"}</i>
+                  </span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-sm text-gray-600">
+                    Efectivo esperado: <b className="text-gray-900">${formatCLP(cash.getExpectedCash?.(cash.current) || 0)}</b>
+                  </span>
+                  <input
+                    className="hidden md:block border rounded-md px-2 py-1 text-sm"
+                    placeholder="Nota de cierre (opcional)"
+                    value={closingNote}
+                    onChange={(e) => setClosingNote(e.target.value)}
+                  />
+                  <button onClick={handleCloseShift} className="px-3 py-1.5 text-sm bg-rose-600 text-white rounded-md hover:bg-rose-700">
+                    Cerrar turno
+                  </button>
+                  <button onClick={() => setShowShiftModal(true)} className="px-3 py-1.5 text-sm border rounded-md hover:bg-gray-50">
+                    Ver Turno / Historial
                   </button>
                 </div>
-              )}
-            </div>
+                <input
+                  className="md:hidden w-full border rounded-md px-2 py-1 text-sm mt-2"
+                  placeholder="Nota de cierre (opcional)"
+                  value={closingNote}
+                  onChange={(e) => setClosingNote(e.target.value)}
+                />
+              </div>
+            ) : (
+              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="px-2 py-0.5 text-xs rounded-full bg-gray-200 text-gray-700 border border-gray-300">
+                    Turno cerrado
+                  </span>
+                  <span className="text-sm text-gray-600">Abre un turno para registrar ventas, gastos y retiros.</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    className="border rounded-md px-2 py-1 text-sm w-40"
+                    placeholder="Apertura $"
+                    inputMode="numeric"
+                    value={openingCashInput}
+                    onChange={(e) => setOpeningCashInput(e.target.value)}
+                  />
+                  <button onClick={handleOpenShift} className="px-3 py-1.5 text-sm bg-emerald-600 text-white rounded-md hover:bg-emerald-700">
+                    Abrir turno
+                  </button>
+                  <button onClick={() => setShowShiftModal(true)} className="px-3 py-1.5 text-sm border rounded-md hover:bg-gray-50">
+                    Ver Turno / Historial
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -1027,9 +1072,7 @@ const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
                 <t.icon size={18} />
                 {t.label}
                 {typeof t.badge === "number" && (
-                  <span className="bg-red-500 text-white text-xs px-2 py-1 rounded-full">
-                    {t.badge}
-                  </span>
+                  <span className="bg-red-500 text-white text-xs px-2 py-1 rounded-full">{t.badge}</span>
                 )}
               </button>
             ))}
@@ -1038,39 +1081,15 @@ const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
 
         {/* Contenido por tab */}
         <div className="animate-fade-in">
-          {/* Dashboard extendido */}
+          {/* Dashboard */}
           {activeTab === "dashboard" && (
             <div className="space-y-6">
               {/* KPIs */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                <KpiCard
-                  icon={<Package className="text-blue-600" size={24} />}
-                  title="Órdenes Hoy"
-                  value={todayOrders}
-                  sub="+12% vs ayer"
-                  color="blue"
-                />
-                <KpiCard
-                  icon={<DollarSign className="text-green-600" size={24} />}
-                  title="Ingresos Hoy"
-                  value={`$${formatCLP(todayRevenue)}`}
-                  sub="+8% vs ayer"
-                  color="green"
-                />
-                <KpiCard
-                  icon={<TrendingUp className="text-purple-600" size={24} />}
-                  title="Ticket Promedio"
-                  value={`$${formatCLP(avgOrderValue)}`}
-                  sub="+5% vs ayer"
-                  color="purple"
-                />
-                <KpiCard
-                  icon={<Clock className="text-orange-600" size={24} />}
-                  title="En Cocina"
-                  value={cooking}
-                  sub="Activos"
-                  color="orange"
-                />
+                <KpiCard icon={<Package className="text-blue-600" size={24} />} title="Órdenes Hoy" value={todayOrders} sub="+12% vs ayer" color="blue" />
+                <KpiCard icon={<DollarSign className="text-green-600" size={24} />} title="Ingresos Hoy" value={`$${formatCLP(todayRevenue)}`} sub="+8% vs ayer" color="green" />
+                <KpiCard icon={<TrendingUp className="text-purple-600" size={24} />} title="Ticket Promedio" value={`$${formatCLP(avgOrderValue)}`} sub="+5% vs ayer" color="purple" />
+                <KpiCard icon={<Clock className="text-orange-600" size={24} />} title="En Cocina" value={cooking} sub="Activos" color="orange" />
               </div>
 
               {/* Estado cocina */}
@@ -1082,112 +1101,66 @@ const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
 
               {/* Arqueo de caja (en vivo) */}
               <div className="bg-white rounded-xl border border-gray-200 p-6">
-                {!current ? (
-                  <div className="text-center">
-                    <div className="flex items-center justify-center gap-2 mb-2">
-                      <Wallet size={18} className="text-rose-600" />
-                      <h3 className="font-semibold text-gray-900">Caja cerrada</h3>
-                    </div>
-                    <p className="text-gray-600 mb-3">
-                      Debes abrir un turno para comenzar a cobrar y ver el arqueo.
-                    </p>
-                    <button
-                      onClick={() => setOpenShiftOpen(true)}
-                      className="px-4 py-2 rounded-lg text-white bg-rose-600 hover:bg-rose-700"
-                    >
-                      Abrir Turno de Caja
-                    </button>
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <Wallet size={18} className="text-rose-600" />
+                    <h3 className="font-semibold text-gray-900">Arqueo de Caja (turno actual)</h3>
                   </div>
-                ) : (
-                  <>
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="flex items-center gap-2">
-                        <Wallet size={18} className="text-rose-600" />
-                        <h3 className="font-semibold text-gray-900">Arqueo de Caja (turno actual)</h3>
-                      </div>
-                      <div className="text-sm text-gray-600">
-                        Efectivo esperado:{" "}
-                        <b className="text-gray-900">${formatCLP(cashExpected)}</b>
-                      </div>
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => setShowOpsModal(true)} className="hidden sm:inline px-3 py-1.5 text-sm border rounded-md hover:bg-gray-50">
+                      Agregar movimiento
+                    </button>
+                    <div className="text-sm text-gray-600">
+                      Efectivo esperado: <b className="text-gray-900">${formatCLP(cashExpected)}</b>
                     </div>
+                  </div>
+                </div>
 
-                    <div className="grid md:grid-cols-3 gap-4">
-                      <div className="space-y-2">
-                        <MiniInfo label="Gastos" value={`$${formatCLP(gastos)}`} />
-                        <MiniInfo label="Retiros" value={`$${formatCLP(retiros)}`} />
-                        <MiniInfo label="Propinas (cash)" value={`$${formatCLP(propinas)}`} />
-                      </div>
-                      <div className="space-y-2">
-                        <MiniInfo label="E-Boletas (monto)" value={`$${formatCLP(eboletaAmount)}`} />
-                        <MiniInfo label="E-Boletas (unid.)" value={`${formatCLP(eboletaCount)}`} />
-                        <MiniInfo
-                          label="Ventas totales"
-                          value={`$${formatCLP(
-                            Object.values(totalsByMethod).reduce((a, b) => a + b, 0)
-                          )}`}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <div className="text-sm text-gray-600 flex items-center gap-2">
-                          <PieChart size={16} /> Ventas por método
-                        </div>
-                        <MethodBar
-                          label="Efectivo (sistema)"
-                          value={totalsByMethod.EFECTIVO_SISTEMA}
-                          maxHint={totalsByMethodMax(totalsByMethod)}
-                        />
-                        <MethodBar
-                          label="Débito (sistema)"
-                          value={totalsByMethod.DEBITO_SISTEMA}
-                          maxHint={totalsByMethodMax(totalsByMethod)}
-                        />
-                        <MethodBar
-                          label="Crédito (sistema)"
-                          value={totalsByMethod.CREDITO_SISTEMA}
-                          maxHint={totalsByMethodMax(totalsByMethod)}
-                        />
-                      </div>
+                <div className="grid md:grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <MiniInfo label="Gastos" value={`$${formatCLP(gastos)}`} />
+                    <MiniInfo label="Retiros" value={`$${formatCLP(retiros)}`} />
+                    <MiniInfo label="Propinas (cash)" value={`$${formatCLP(propinas)}`} />
+                  </div>
+                  <div className="space-y-2">
+                    <MiniInfo label="E-Boletas (monto)" value={`$${formatCLP(eboletaAmount)}`} />
+                    <MiniInfo label="E-Boletas (unid.)" value={`${formatCLP(eboletaCount)}`} />
+                    <MiniInfo
+                      label="Ventas totales"
+                      value={`$${formatCLP(Object.values(totalsByMethod).reduce((a, b) => a + b, 0))}`}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <div className="text-sm text-gray-600 flex items-center gap-2">
+                      <PieChart size={16} /> Ventas por método
                     </div>
+                    <MethodBar label="Efectivo (sistema)" value={totalsByMethod.EFECTIVO_SISTEMA} maxHint={totalsByMethodMax(totalsByMethod)} />
+                    <MethodBar label="Débito (sistema)" value={totalsByMethod.DEBITO_SISTEMA} maxHint={totalsByMethodMax(totalsByMethod)} />
+                    <MethodBar label="Crédito (sistema)" value={totalsByMethod.CREDITO_SISTEMA} maxHint={totalsByMethodMax(totalsByMethod)} />
+                  </div>
+                </div>
 
-                    <div className="grid md:grid-cols-4 gap-3 mt-4">
-                      <MethodBar
-                        label="POS Débito"
-                        value={totalsByMethod.POS_DEBITO}
-                        maxHint={totalsByMethodMax(totalsByMethod)}
-                      />
-                      <MethodBar
-                        label="POS Crédito"
-                        value={totalsByMethod.POS_CREDITO}
-                        maxHint={totalsByMethodMax(totalsByMethod)}
-                      />
-                      <MethodBar
-                        label="Mercado Pago"
-                        value={totalsByMethod.MERCADO_PAGO}
-                        maxHint={totalsByMethodMax(totalsByMethod)}
-                      />
-                      <MethodBar
-                        label="Transferencia"
-                        value={totalsByMethod.TRANSFERENCIA}
-                        maxHint={totalsByMethodMax(totalsByMethod)}
-                      />
-                    </div>
+                <div className="grid md:grid-cols-4 gap-3 mt-4">
+                  <MethodBar label="POS Débito" value={totalsByMethod.POS_DEBITO} maxHint={totalsByMethodMax(totalsByMethod)} />
+                  <MethodBar label="POS Crédito" value={totalsByMethod.POS_CREDITO} maxHint={totalsByMethodMax(totalsByMethod)} />
+                  <MethodBar label="Mercado Pago" value={totalsByMethod.MERCADO_PAGO} maxHint={totalsByMethodMax(totalsByMethod)} />
+                  <MethodBar label="Transferencia" value={totalsByMethod.TRANSFERENCIA} maxHint={totalsByMethodMax(totalsByMethod)} />
+                </div>
 
-                    <div className="mt-3 text-xs text-gray-500 flex items-center gap-1">
-                      <LineChart size={14} /> Los totales se actualizan cuando registras pagos en <b>“Pagar”</b>.
-                    </div>
-                  </>
-                )}
+                <button onClick={() => setShowOpsModal(true)} className="sm:hidden w-full mt-3 px-3 py-2 text-sm border rounded-md hover:bg-gray-50">
+                  Agregar movimiento
+                </button>
+
+                <div className="mt-3 text-xs text-gray-500 flex items-center gap-1">
+                  <LineChart size={14} /> Los totales se actualizan cuando registras pagos en <b>“Pagar”</b>.
+                </div>
               </div>
             </div>
           )}
 
           {/* Promociones */}
           {activeTab === "promotions" && (
-            <PromotionsGrid
-              onAddToCart={addToCart}
-              onAddToCartDetailed={addToCartDetailed}
-              onAfterConfirm={goToCreateOrder}
-            />
+            <PromotionsGrid onAddToCart={addToCart} onAddToCartDetailed={addToCartDetailed} onAfterConfirm={goToCreateOrder} />
           )}
 
           {/* Carrito */}
@@ -1201,11 +1174,7 @@ const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
               estimatedTime={estimatedCooking || 15}
               onContinue={() => {
                 const hasMin =
-                  !!customerData.name?.trim() &&
-                  !!customerData.phone?.trim() &&
-                  !!customerData.street?.trim() &&
-                  !!customerData.number?.trim();
-
+                  !!customerData.name?.trim() && !!customerData.phone?.trim() && !!customerData.street?.trim() && !!customerData.number?.trim();
                 if (hasMin) setActiveTab("pay");
                 else {
                   setActiveTab("customer");
@@ -1277,23 +1246,14 @@ const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
           {activeTab === "orders" && (
             <div className="space-y-4">
               {displayedOrders.length === 0 ? (
-                <div className="bg-white p-10 rounded-xl text-center text-gray-500 border border-gray-200">
-                  No hay órdenes aún
-                </div>
+                <div className="bg-white p-10 rounded-xl text-center text-gray-500 border border-gray-200">No hay órdenes aún</div>
               ) : (
                 displayedOrders.map((o) => (
-                  <div
-                    key={o.id}
-                    className="bg-white p-4 rounded-xl border border-gray-200 hover:shadow-sm transition"
-                  >
+                  <div key={o.id} className="bg-white p-4 rounded-xl border border-gray-200 hover:shadow-sm transition">
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="text-sm text-gray-500">
-                          #{o.publicCode} • {o.status.toUpperCase()}
-                        </p>
-                        <p className="font-semibold text-gray-900">
-                          {o.name} — {o.phone}
-                        </p>
+                        <p className="text-sm text-gray-500">#{o.publicCode} • {o.status.toUpperCase()}</p>
+                        <p className="font-semibold text-gray-900">{o.name} — {o.phone}</p>
                         <p className="text-sm text-gray-600">{o.address}</p>
                       </div>
                       <div className="flex items-center gap-3">
@@ -1308,12 +1268,8 @@ const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
                           <Eye size={16} /> Detalle
                         </button>
                         <div className="text-right">
-                          <p className="text-xl font-bold text-rose-600">
-                            ${formatCLP(o.total)}
-                          </p>
-                          <p className="text-xs text-gray-500">
-                            ⏱️ {o.estimatedTime} min • {timeAgo(o.createdAt)}
-                          </p>
+                          <p className="text-xl font-bold text-rose-600">${formatCLP(o.total)}</p>
+                          <p className="text-xs text-gray-500">⏱️ {o.estimatedTime} min • {timeAgo(o.createdAt)}</p>
                         </div>
                       </div>
                     </div>
@@ -1325,69 +1281,35 @@ const CashierPanel: React.FC<Props> = ({ ordersApi }) => {
         </div>
       </div>
 
-      <OrderDetailModal
-        open={showDetail}
-        onClose={() => setShowDetail(false)}
-        order={selectedOrder}
-      />
+      <OrderDetailModal open={showDetail} onClose={() => setShowDetail(false)} order={selectedOrder} />
 
-      {/* Modal abrir caja */}
-      <OpenShiftModal
-        open={openShiftOpen}
-        onClose={() => setOpenShiftOpen(false)}
-        onConfirm={async (openingCash) => {
-          try {
-            if ((cash as any).openSession) {
-              // compat: algunos contexts aceptan objeto {openedAt, openingCash}
-              // y otros solo el monto. Enviamos el objeto, que es más completo.
-              await (cash as any).openSession({
-                openedAt: Date.now(),
-                openingCash: Math.round(openingCash || 0),
-              });
-              notify("success", "Turno de caja abierto");
-            } else {
-              notify("error", "openSession no está implementado en cashupContext");
-            }
-          } catch (e) {
-            console.error("openSession error", e);
-            notify("error", "No se pudo abrir el turno");
-          } finally {
-            setOpenShiftOpen(false);
-          }
-        }}
-      />
+      {/* Modales de Caja */}
+      {showShiftModal && <CashShiftModal open={showShiftModal} onClose={() => setShowShiftModal(false)} currentUser={cashierName} />}
+
+      {showOpsModal && <CashOpsQuickModal open={showOpsModal} onClose={() => setShowOpsModal(false)} currentUser={cashierName} />}
     </div>
   );
 };
 
 /* ===== UI helpers ===== */
-const KpiCard: React.FC<{
-  icon: React.ReactNode;
-  title: string;
-  value: React.ReactNode;
-  sub?: string;
-  color: "blue" | "green" | "purple" | "orange";
-}> = ({ icon, title, value, sub, color }) => {
-  const bg = { blue: "bg-blue-100", green: "bg-green-100", purple: "bg-purple-100", orange: "bg-orange-100" }[color];
-  return (
-    <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-gray-600 text-sm">{title}</p>
-          <p className="text-3xl font-bold text-gray-900">{value}</p>
-          {sub && <p className={`text-sm ${color === "green" ? "text-green-600" : "text-gray-500"}`}>↗ {sub}</p>}
+const KpiCard: React.FC<{ icon: React.ReactNode; title: string; value: React.ReactNode; sub?: string; color: "blue" | "green" | "purple" | "orange" }> =
+  ({ icon, title, value, sub, color }) => {
+    const bg = { blue: "bg-blue-100", green: "bg-green-100", purple: "bg-purple-100", orange: "bg-orange-100" }[color];
+    return (
+      <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-gray-600 text-sm">{title}</p>
+            <p className="text-3xl font-bold text-gray-900">{value}</p>
+            {sub && <p className={`text-sm ${color === "green" ? "text-green-600" : "text-gray-500"}`}>↗ {sub}</p>}
+          </div>
+          <div className={`w-12 h-12 ${bg} rounded-xl flex items-center justify-center`}>{icon}</div>
         </div>
-        <div className={`w-12 h-12 ${bg} rounded-xl flex items-center justify-center`}>{icon}</div>
       </div>
-    </div>
-  );
-};
+    );
+  };
 
-const StatusCard: React.FC<{
-  title: string;
-  value: number;
-  barColor: "yellow" | "orange" | "green";
-}> = ({ title, value, barColor }) => {
+const StatusCard: React.FC<{ title: string; value: number; barColor: "yellow" | "orange" | "green" }> = ({ title, value, barColor }) => {
   const bg = { yellow: "bg-yellow-200", orange: "bg-orange-200", green: "bg-green-200" }[barColor];
   const bar = { yellow: "bg-yellow-500", orange: "bg-orange-500", green: "bg-green-500" }[barColor];
   return (

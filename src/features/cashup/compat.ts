@@ -1,41 +1,18 @@
-// src/features/cashup/compat.ts
-export type MethodKey =
-  | "EFECTIVO_SISTEMA"
-  | "DEBITO_SISTEMA"
-  | "CREDITO_SISTEMA"
-  | "POS_DEBITO"
-  | "POS_CREDITO"
-  | "TRANSFERENCIA"
-  | "MERCADO_PAGO";
+import { useCashup } from "./cashupContext";
 
-const BASE_FLOAT = 45000;
-
-export function fallbackExpectedCash(current: any) {
-  const efectivo = current?.ops?.salesRuntime?.byMethod?.EFECTIVO_SISTEMA ?? 0;
-  const tips = current?.ops?.tips?.cashTips ?? 0;
-  const gastos = (current?.ops?.expenses ?? []).reduce(
-    (a: number, e: any) => a + (e?.amount || 0),
-    0
-  );
-  const retiros = current?.ops?.withdrawals ?? 0;
-  return BASE_FLOAT + efectivo + tips - gastos - retiros;
-}
-
-export function getCashupCompat(cash: any) {
+export function getCashupCompat(ctx: ReturnType<typeof useCashup> | any) {
+  if (!ctx) return {} as any;
   return {
-    current: cash?.current,
-    openSession: cash?.openSession || cash?.openShift || cash?.open || null,
-    closeSession: cash?.closeSession || cash?.closeShift || cash?.close || null,
-    listSessions: cash?.listSessions || cash?.getSessions || (() => []),
-    getExpectedCash: cash?.getExpectedCash || ((cur: any) => fallbackExpectedCash(cur)),
-    // ventas y documentos (tolerante a distintos nombres)
-    registerSale: cash?.registerSale || cash?.addSale || cash?.logSale || null,
-    registerFiscalDoc:
-      cash?.registerFiscalDoc ||
-      cash?.logFiscalDoc ||
-      cash?.createFiscalDoc ||
-      null,
-    // propinas (cash)
-    addCashTip: cash?.addCashTip || cash?.registerTip || cash?.addTip || null,
-  };
+    current: ctx.current || null,
+    listSessions: ctx.listSessions?.bind(ctx),
+    openSession: ctx.openSession?.bind(ctx),
+    closeSession: ctx.closeSession?.bind(ctx),
+    getExpectedCash: ctx.getExpectedCash?.bind(ctx),
+    registerSale: ctx.registerSale?.bind(ctx),
+    registerFiscalDoc: ctx.registerFiscalDoc?.bind(ctx),
+    addCashTip: ctx.addCashTip?.bind(ctx),
+    addExpense: ctx.addExpense?.bind(ctx),
+    addWithdrawal: ctx.addWithdrawal?.bind(ctx),
+    recompute: ctx.recompute?.bind(ctx),
+  } as any;
 }

@@ -1,7 +1,7 @@
-import React, { createContext, useCallback, useContext, useMemo, useRef, useState } from "react";
+import React, { createContext, useContext, useMemo, useRef, useState } from "react";
 
-/** ===== Tipos ===== */
-export type MethodKey =
+/** ====== Tipos ====== */
+export type SaleMethodKey =
   | "EFECTIVO_SISTEMA"
   | "DEBITO_SISTEMA"
   | "CREDITO_SISTEMA"
@@ -10,332 +10,210 @@ export type MethodKey =
   | "TRANSFERENCIA"
   | "MERCADO_PAGO";
 
-export type CLPDenoms = {
-  20000: number;
-  10000: number;
-  5000: number;
-  2000: number;
-  1000: number;
-  500: number;
-  100: number;
-  50: number;
-  10: number;
-};
-
-export type Expense = {
-  id: string;
-  amount: number;
-  category?: string;
-  concept?: string;      // 👈 para “tomates”, “gas”, etc.
-  note?: string;
-  createdAt: number;
-};
-
-export type TipsInfo = { cashTips?: number };
-
-export type FiscalInfo = {
-  eboletaAmount?: number;
-  eboletaCount?: number;
-};
+type Expense = { ts: number; label: string; amount: number; by?: string };
+type Tips = { cashTips: number };
+type Fiscal = { eboletaAmount: number; eboletaCount: number };
 
 export type SalesRuntime = {
-  byMethod: Partial<Record<MethodKey, number>>;
-  // Si en el futuro vuelves a habilitar mixtos, ya tenemos el tipo
-  splitSales: Array<{
-    id: string;
-    parts: Array<{ method: MethodKey; amount: number }>;
-    total: number;
-    createdAt: number;
-  }>;
+  total: number;
+  byMethod: Record<SaleMethodKey | string, number>;
 };
 
-export type SessionStatus = "OPEN" | "CLOSED";
-
-export type OpenInfo = {
-  openedAt: number;
-  cashierName: string;
-  openingFloat: number;
-  openingDenoms?: Partial<CLPDenoms>;
-};
-
-export type CloseInfo = {
-  closedAt: number;
-  countedCash: number;
-  countedDenoms?: Partial<CLPDenoms>;
-  cashDiff?: number;
-  signedBy?: string;
-  supervisor?: { name?: string; pinMasked?: string };
-  /** Regla: caja debe quedar a 45.000 */
-  baselineAdjust?: { toKeep: number; action: "RETIRO" | "INGRESO"; amount: number };
-};
-
-export type Ops = {
+type Ops = {
+  openingCash: number;
   salesRuntime: SalesRuntime;
+  tips: Tips;
   expenses: Expense[];
-  withdrawals?: number;
-  tips?: TipsInfo;
-  fiscal?: FiscalInfo;
+  withdrawals: number;
+  fiscal: Fiscal;
 };
 
-export type Session = {
+export type CashSession = {
   id: string;
-  status: SessionStatus;
-  open: OpenInfo;
+  openedAt: number;
+  closedAt?: number;
+  openedBy?: string;
+  closedBy?: string;
+  note?: string;
   ops: Ops;
-  close?: CloseInfo;
 };
 
-type Store = {
-  current: Session | null;
-  history: Session[];
-};
-
-/** ===== Constantes ===== */
-const LS_KEY = "koi_cashup_v1";
-const BASELINE = 45000;
-
-/** ===== Utils ===== */
-export const totalFromDenoms = (d?: Partial<CLPDenoms>): number => {
-  if (!d) return 0;
-  const keys = [20000, 10000, 5000, 2000, 1000, 500, 100, 50, 10] as const;
-  return keys.reduce((s, k) => s + (Number(d[k] || 0) * Number(k)), 0);
-};
-
-const now = () => Date.now();
-
-const load = (): Store => {
-  try {
-    const raw = localStorage.getItem(LS_KEY);
-    if (!raw) return { current: null, history: [] };
-    const parsed: Store = JSON.parse(raw);
-    return parsed || { current: null, history: [] };
-  } catch {
-    return { current: null, history: [] };
-  }
-};
-
-const save = (s: Store) => {
-  localStorage.setItem(LS_KEY, JSON.stringify(s));
-};
-
-/** ===== Context ===== */
 type Ctx = {
-  current: Session | null;
-  listSessions: () => Session[];
-  openShift: (cashierName: string, openingFloat: number, openingDenoms?: Partial<CLPDenoms>) => void;
-  addExpense: (e: Omit<Expense, "id" | "createdAt"> & { amount: number }) => void;
-  addTip: (amount: number) => void;
-  withdraw: (amount: number, note?: string) => void;
-  recordSale: (method: MethodKey, amount: number) => void;
-  setFiscal: (changes: Partial<FiscalInfo>) => void;
-  getExpectedCash: (s?: Session | null) => number;
-  closeShift: (payload: {
-    countedDenoms?: Partial<CLPDenoms>;
-    countedCash?: number; // si no viene, lo calculo de denoms
-    signedBy?: string;
-    supervisor?: { name?: string; pinMasked?: string };
-  }) => Session;
-  resetAll: () => void;
+  current: CashSession | null;
+  sessions: CashSession[];
+  openSession: (args: { openingCash?: number; openedBy?: string; note?: string }) => CashSession;
+  closeSession: (note?: string) => CashSession | null;
+  listSessions: () => CashSession[];
+  getExpectedCash: (s?: CashSession | null) => number;
+
+  registerSale: (method: SaleMethodKey, amount: number, extra?: { by?: string }) => void;
+  addExpense: (e: { amount: number; label: string; by?: string }) => void;
+  addWithdrawal: (amount: number, label?: string, extra?: { by?: string }) => void;
+  addCashTip: (amount: number, extra?: { by?: string }) => void;
+
+  registerFiscalDoc: (amount: number, count?: number) => void;
+  recompute: () => void;
 };
 
 const CashupContext = createContext<Ctx | null>(null);
+export const useCashup = () => useContext(CashupContext);
 
+/** ====== Persistencia simple en localStorage ====== */
+const LS_KEY = "__KOI_CASH_SESSIONS__";
+
+function loadSessions(): CashSession[] {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (!raw) return [];
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveSessions(list: CashSession[]) {
+  try {
+    localStorage.setItem(LS_KEY, JSON.stringify(list));
+  } catch {}
+}
+
+function newOps(openingCash = 0): Ops {
+  return {
+    openingCash,
+    salesRuntime: { total: 0, byMethod: {} },
+    tips: { cashTips: 0 },
+    expenses: [],
+    withdrawals: 0,
+    fiscal: { eboletaAmount: 0, eboletaCount: 0 },
+  };
+}
+
+/** ====== Provider ====== */
 export const CashupProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const storeRef = useRef<Store>(load());
-  const [, force] = useState(0);
-  const rerender = () => force((x) => x + 1);
+  const [sessions, setSessions] = useState<CashSession[]>(() => loadSessions());
+  const current = useMemo(() => sessions.find((s) => !s.closedAt) || null, [sessions]);
+  const saving = useRef(false);
 
-  const persist = (next: Store) => {
-    storeRef.current = next;
-    save(next);
-    rerender();
+  const commit = (next: CashSession[] | ((p: CashSession[]) => CashSession[])) => {
+    setSessions((prev) => {
+      const out = typeof next === "function" ? (next as any)(prev) : next;
+      if (!saving.current) {
+        saving.current = true;
+        queueMicrotask(() => {
+          saveSessions(out);
+          saving.current = false;
+        });
+      }
+      return out;
+    });
   };
 
-  const listSessions = useCallback(() => {
-    const { current, history } = storeRef.current;
-    // historial más el turno actual (si hay)
-    return [...history].concat(current ? [current] : []);
-  }, []);
-
-  const openShift = useCallback(
-    (cashierName: string, openingFloat: number, openingDenoms?: Partial<CLPDenoms>) => {
-      const s = storeRef.current;
-      if (s.current) throw new Error("Ya hay un turno abierto");
-
-      const open: OpenInfo = {
-        openedAt: now(),
-        cashierName,
-        openingFloat: openingFloat || BASELINE, // sugerido baseline
-        openingDenoms,
-      };
-
-      const sess: Session = {
-        id: `S${Date.now()}`,
-        status: "OPEN",
-        open,
-        ops: {
-          salesRuntime: { byMethod: {}, splitSales: [] },
-          expenses: [],
-          withdrawals: 0,
-          tips: { cashTips: 0 },
-          fiscal: { eboletaAmount: 0, eboletaCount: 0 },
-        },
-      };
-      persist({ ...s, current: sess });
-    },
-    []
-  );
-
-  const addExpense = useCallback((e: Omit<Expense, "id" | "createdAt"> & { amount: number }) => {
-    const s = storeRef.current;
-    if (!s.current) throw new Error("No hay turno abierto");
-    const exp: Expense = { id: `E${Date.now()}`, createdAt: now(), ...e };
-    const next: Store = {
-      ...s,
-      current: { ...s.current, ops: { ...s.current.ops, expenses: [...s.current.ops.expenses, exp] } },
+  const openSession: Ctx["openSession"] = ({ openingCash = 0, openedBy = "Cajero", note }) => {
+    const already = sessions.find((s) => !s.closedAt);
+    if (already) return already;
+    const s: CashSession = {
+      id: String(Date.now()),
+      openedAt: Date.now(),
+      openedBy,
+      note,
+      ops: newOps(openingCash),
     };
-    persist(next);
-  }, []);
+    commit((p) => [s, ...p]);
+    return s;
+  };
 
-  const addTip = useCallback((amount: number) => {
-    const s = storeRef.current;
-    if (!s.current) throw new Error("No hay turno abierto");
-    const prev = s.current.ops.tips?.cashTips || 0;
-    const next: Store = {
-      ...s,
-      current: { ...s.current, ops: { ...s.current.ops, tips: { cashTips: prev + (amount || 0) } } },
-    };
-    persist(next);
-  }, []);
+  const closeSession: Ctx["closeSession"] = (note) => {
+    if (!current) return null;
+    const closed: CashSession = { ...current, closedAt: Date.now(), note: note || current.note };
+    commit((p) => [closed, ...p.filter((x) => x.id !== current.id)]);
+    return closed;
+  };
 
-  const withdraw = useCallback((amount: number) => {
-    const s = storeRef.current;
-    if (!s.current) throw new Error("No hay turno abierto");
-    const prev = s.current.ops.withdrawals || 0;
-    const next: Store = {
-      ...s,
-      current: { ...s.current, ops: { ...s.current.ops, withdrawals: prev + (amount || 0) } },
-    };
-    persist(next);
-  }, []);
+  const listSessions = () => sessions;
 
-  const recordSale = useCallback((method: MethodKey, amount: number) => {
-    const s = storeRef.current;
-    if (!s.current) throw new Error("No hay turno abierto");
-    const by = { ...(s.current.ops.salesRuntime.byMethod || {}) };
-    by[method] = (by[method] || 0) + (amount || 0);
-    const next: Store = {
-      ...s,
-      current: {
-        ...s.current,
-        ops: {
-          ...s.current.ops,
-          salesRuntime: { ...s.current.ops.salesRuntime, byMethod: by },
-        },
-      },
-    };
-    persist(next);
-  }, []);
+  const registerSale: Ctx["registerSale"] = (method, amount) => {
+    if (!current) return;
+    commit((p) =>
+      p.map((s) => {
+        if (s.id !== current.id) return s;
+        const byMethod = { ...s.ops.salesRuntime.byMethod };
+        byMethod[method] = (byMethod[method] || 0) + Math.max(0, Math.round(amount || 0));
+        const total = Object.values(byMethod).reduce((a, b) => a + (b || 0), 0);
+        return { ...s, ops: { ...s.ops, salesRuntime: { total, byMethod } } };
+      })
+    );
+  };
 
-  const setFiscal = useCallback((changes: Partial<FiscalInfo>) => {
-    const s = storeRef.current;
-    if (!s.current) throw new Error("No hay turno abierto");
-    const next: Store = {
-      ...s,
-      current: {
-        ...s.current,
-        ops: { ...s.current.ops, fiscal: { ...(s.current.ops.fiscal || {}), ...changes } },
-      },
-    };
-    persist(next);
-  }, []);
+  const addExpense: Ctx["addExpense"] = ({ amount, label, by }) => {
+    if (!current) return;
+    const e = { ts: Date.now(), label, amount: Math.max(0, Math.round(amount || 0)), by };
+    commit((p) => p.map((s) => (s.id === current.id ? { ...s, ops: { ...s.ops, expenses: [...s.ops.expenses, e] } } : s)));
+  };
 
-  const getExpectedCash = useCallback((session?: Session | null): number => {
-    const s = session ?? storeRef.current.current;
-    if (!s) return 0;
-    const by = s.ops.salesRuntime.byMethod || {};
-    const cashSales = by.EFECTIVO_SISTEMA || 0;
-    const tips = s.ops.tips?.cashTips || 0;
-    const withdrawals = s.ops.withdrawals || 0;
-    const expenses = (s.ops.expenses || []).reduce((acc, e) => acc + (e.amount || 0), 0);
-    const expected = (s.open.openingFloat || 0) + cashSales + tips - expenses - withdrawals;
-    return Math.max(0, Math.round(expected));
-  }, []);
+  const addWithdrawal: Ctx["addWithdrawal"] = (amount) => {
+    if (!current) return;
+    const a = Math.max(0, Math.round(amount || 0));
+    commit((p) => p.map((s) => (s.id === current.id ? { ...s, ops: { ...s.ops, withdrawals: (s.ops.withdrawals || 0) + a } } : s)));
+  };
 
-  const closeShift = useCallback(
-    (payload: {
-      countedDenoms?: Partial<CLPDenoms>;
-      countedCash?: number;
-      signedBy?: string;
-      supervisor?: { name?: string; pinMasked?: string };
-    }): Session => {
-      const s = storeRef.current;
-      if (!s.current) throw new Error("No hay turno abierto");
+  const addCashTip: Ctx["addCashTip"] = (amount) => {
+    if (!current) return;
+    const a = Math.max(0, Math.round(amount || 0));
+    commit((p) =>
+      p.map((s) => (s.id === current.id ? { ...s, ops: { ...s.ops, tips: { cashTips: (s.ops.tips?.cashTips || 0) + a } } } : s))
+    );
+  };
 
-      const countedCash =
-        (typeof payload.countedCash === "number" ? payload.countedCash : totalFromDenoms(payload.countedDenoms)) || 0;
-      const expected = getExpectedCash(s.current);
-      const diff = countedCash - expected;
+  const registerFiscalDoc: Ctx["registerFiscalDoc"] = (amount, count = 1) => {
+    if (!current) return;
+    const a = Math.max(0, Math.round(amount || 0));
+    const c = Math.max(0, Math.round(count || 0));
+    commit((p) =>
+      p.map((s) =>
+        s.id === current.id
+          ? {
+              ...s,
+              ops: {
+                ...s.ops,
+                fiscal: {
+                  eboletaAmount: (s.ops.fiscal?.eboletaAmount || 0) + a,
+                  eboletaCount: (s.ops.fiscal?.eboletaCount || 0) + c,
+                },
+              },
+            }
+          : s
+      )
+    );
+  };
 
-      // Baseline 45.000: registro de ajuste
-      let adjust: CloseInfo["baselineAdjust"] | undefined;
-      if (countedCash > BASELINE) {
-        adjust = { toKeep: BASELINE, action: "RETIRO", amount: countedCash - BASELINE };
-      } else if (countedCash < BASELINE) {
-        adjust = { toKeep: BASELINE, action: "INGRESO", amount: BASELINE - countedCash };
-      } else {
-        adjust = { toKeep: BASELINE, action: "RETIRO", amount: 0 }; // neutro
-      }
+  const getExpectedCash: Ctx["getExpectedCash"] = (s) => {
+    const ss = s ?? current;
+    if (!ss) return 0;
+    const opening = ss.ops.openingCash || 0;
+    const efectivoSistema = ss.ops.salesRuntime.byMethod["EFECTIVO_SISTEMA"] || 0;
+    const propinasCash = ss.ops.tips?.cashTips || 0;
+    const gastos = ss.ops.expenses.reduce((a, b) => a + (b?.amount || 0), 0);
+    const retiros = ss.ops.withdrawals || 0;
+    return Math.max(0, Math.round(opening + efectivoSistema + propinasCash - gastos - retiros));
+  };
 
-      const closed: Session = {
-        ...s.current,
-        status: "CLOSED",
-        close: {
-          closedAt: now(),
-          countedCash,
-          countedDenoms: payload.countedDenoms,
-          cashDiff: diff,
-          signedBy: payload.signedBy,
-          supervisor: payload.supervisor,
-          baselineAdjust: adjust,
-        },
-      };
+  const recompute = () => commit((p) => [...p]); // tick
 
-      // Persistimos en histórico y limpiamos current
-      const history = [...s.history, closed];
-      const next: Store = { current: null, history };
-      persist(next);
-      return closed;
-    },
-    [getExpectedCash]
-  );
-
-  const resetAll = useCallback(() => {
-    persist({ current: null, history: [] });
-  }, []);
-
-  const value = useMemo<Ctx>(
-    () => ({
-      current: storeRef.current.current,
-      listSessions,
-      openShift,
-      addExpense,
-      addTip,
-      withdraw,
-      recordSale,
-      setFiscal,
-      getExpectedCash,
-      closeShift,
-      resetAll,
-    }),
-    [listSessions, openShift, addExpense, addTip, withdraw, recordSale, setFiscal, getExpectedCash, closeShift, resetAll]
-  );
+  const value: Ctx = {
+    current,
+    sessions,
+    openSession,
+    closeSession,
+    listSessions,
+    getExpectedCash,
+    registerSale,
+    addExpense,
+    addWithdrawal,
+    addCashTip,
+    registerFiscalDoc,
+    recompute,
+  };
 
   return <CashupContext.Provider value={value}>{children}</CashupContext.Provider>;
-};
-
-export const useCashup = () => {
-  const ctx = useContext(CashupContext);
-  if (!ctx) throw new Error("useCashup debe usarse dentro de <CashupProvider>");
-  return ctx;
 };
