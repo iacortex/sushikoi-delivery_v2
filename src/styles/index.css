@@ -147,3 +147,23 @@
   .no-print { display: none !important; }
   .print-break { page-break-before: always; }
 }
+
+/* ==========================================
+   LEAFLET FIXES (para que funcione con Tailwind)
+   - Tailwind pone img{max-width:100%} y Leaflet usa <img> para tiles/markers.
+   - Este bloque evita que se deformen o desaparezcan.
+========================================== */
+.leaflet-container {
+  height: 100%;
+  width: 100%;
+  font: inherit;
+}
+.leaflet-container .leaflet-pane img,
+.leaflet-container .leaflet-tile,
+.leaflet-container .leaflet-marker-icon,
+.leaflet-container .leaflet-marker-shadow {
+  max-width: none !important;
+}
+.leaflet-control-attribution {
+  font-size: 11px;
+}

@@ -241,8 +241,6 @@ export default function CashOpsQuickModal({
       ? [500, 1000, 2000, 3000, 5000]
       : [1000, 2000, 5000, 10000, 20000, 50000];
 
-  const addQuick = (setter: (s: string) => void, prev: string, n: number) =>
-    setter(String(toNum(prev) + n));
 
   const amountByTab =
     subTab === "gasto"
@@ -460,7 +458,7 @@ export default function CashOpsQuickModal({
                     label="Monto"
                     value={gAmount}
                     onChange={setGAmount}
-                    quicks={[1000, 2000, 5000, 10000, 20000, 50000]}
+                    quicks={quicks} 
                     inputRef={amountRef}
                   />
                 </>
@@ -483,7 +481,7 @@ export default function CashOpsQuickModal({
                     label="Monto"
                     value={wAmount}
                     onChange={setWAmount}
-                    quicks={[1000, 2000, 5000, 10000, 20000, 50000]}
+                    quicks={quicks} 
                     inputRef={amountRef}
                   />
                 </>
@@ -784,13 +782,14 @@ const AmountInput: React.FC<{
   value: string;
   onChange: (s: string) => void;
   quicks: number[];
-  inputRef?: React.RefObject<HTMLInputElement>;
+  // 👇 Ajuste de tipo para aceptar refs creadas como React.useRef<HTMLInputElement|null>(null)
+  inputRef?: React.RefObject<HTMLInputElement | null>;
 }> = ({ label, value, onChange, quicks, inputRef }) => (
   <div>
     <div className="text-xs text-gray-600 mb-1">{label}</div>
     <div className="flex items-center gap-2">
       <input
-        ref={inputRef}
+        ref={inputRef as React.RefObject<HTMLInputElement>}
         className="flex-1 border rounded-md px-3 py-2 text-sm"
         inputMode="numeric"
         placeholder="$"

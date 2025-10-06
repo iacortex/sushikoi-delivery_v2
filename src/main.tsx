@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { App } from './app/App';
 import './styles/index.css';
+import 'leaflet/dist/leaflet.css'; // ⬅️ necesario para que Leaflet pinte el mapa
 import { CashupProvider } from "@/features/cashup/cashupContext";
 
 document.body.classList.remove('koi');

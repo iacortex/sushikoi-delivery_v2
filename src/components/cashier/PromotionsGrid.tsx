@@ -1,6 +1,6 @@
 // src/components/cashier/PromotionsGrid.tsx
 import React from "react";
-import { Search, Plus, SlidersHorizontal, Layers, Filter, X } from "lucide-react";
+import { Search, Layers, Filter, X } from "lucide-react";
 import { groupMenu, MenuItem } from "@/features/menu/catalog";
 import PromotionDetailModal, { AddToCartPayload } from "./PromotionDetailModal";
 
@@ -11,7 +11,7 @@ export default function PromotionsGrid(props: {
   onAddToCartDetailed: (p: AddToCartPayload) => void;
   onAfterConfirm?: () => void;
 }) {
-  const { onAddToCart, onAddToCartDetailed, onAfterConfirm } = props;
+  const { onAddToCartDetailed, onAfterConfirm } = props;
 
   // === búsqueda y vista
   const [q, setQ] = React.useState("");
@@ -33,25 +33,40 @@ export default function PromotionsGrid(props: {
     premium: (m) => /premium|3\.0|2\.5|especial|full/i.test(m.name) || /PREMIUM/i.test(m.subgroup || ""),
   };
 
-  const applyChips = React.useCallback((cat: "PROMOCIONES" | "PRODUCTOS INDIVIDUALES") => {
-    const groups = sectionsRaw[cat];
-    if (!groups) return null;
-    if (chips.length === 0) return groups;
+  const applyChips = React.useCallback(
+    (cat: "PROMOCIONES" | "PRODUCTOS INDIVIDUALES") => {
+      const groups = sectionsRaw[cat];
+      if (!groups) return null;
+      if (chips.length === 0) return groups;
 
-    const next: Record<string, MenuItem[]> = {};
-    for (const sub of Object.keys(groups)) {
-      const items = groups[sub].filter((m) => chips.every((ck) => preds[ck](m)));
-      if (items.length) next[sub] = items;
-    }
-    return next;
-  }, [chips, sectionsRaw]);
+      const next: Record<string, MenuItem[]> = {};
+      for (const sub of Object.keys(groups)) {
+        const items = groups[sub].filter((m) => chips.every((ck) => preds[ck](m)));
+        if (items.length) next[sub] = items;
+      }
+      return next;
+    },
+    [chips, sectionsRaw]
+  );
 
-  // ===== Modal personalizar (tu componente)
+  // ===== Modal (usa tu PromotionDetailModal existente)
   const [modalOpen, setModalOpen] = React.useState(false);
-  const [modalData, setModalData] = React.useState<{ id: number; name: string; price: number; time?: number; isLarge?: boolean } | null>(null);
+  const [modalData, setModalData] = React.useState<{
+    id: number;
+    name: string;
+    price: number;
+    time?: number;
+    isLarge?: boolean;
+  } | null>(null);
 
   const openCustomize = (m: MenuItem) => {
-    setModalData({ id: m.id, name: m.name, price: m.price, time: m.time, isLarge: /(\b62|\b63|\b82|\b100|\b110)\b|3\.0|2\.5|Especial|Full/i.test(m.name) });
+    setModalData({
+      id: m.id,
+      name: m.name,
+      price: m.price,
+      time: m.time,
+      isLarge: /(\b62|\b63|\b82|\b100|\b110)\b|3\.0|2\.5|Especial|Full/i.test(m.name),
+    });
     setModalOpen(true);
   };
 
@@ -67,15 +82,16 @@ export default function PromotionsGrid(props: {
 
   const clp = (n: number) => new Intl.NumberFormat("es-CL").format(Math.round(n || 0));
 
+  // ✅ Tarjeta completa clickeable: NO muestra botones “Agregar/Personalizar”
   const Card: React.FC<{ m: MenuItem }> = ({ m }) => {
-    const addQuick = () => {
-      onAddToCart(m.id, m.price);
-      onAfterConfirm?.();
-    };
     return (
-      <div className="border rounded-xl p-3 hover:shadow-sm transition flex flex-col">
+      <button
+        onClick={() => openCustomize(m)}
+        className="border rounded-xl p-3 hover:shadow-sm transition flex flex-col text-left cursor-pointer focus:outline-none focus:ring-2 focus:ring-rose-500"
+        title="Toca para configurar y agregar"
+      >
         <div className="flex items-center justify-between">
-          <div className="text-xl">{m.emoji || (m.type === "promo" ? "🎉" : "🍣")}</div>
+          <div className="text-2xl">{m.emoji || (m.type === "promo" ? "🎉" : "🍣")}</div>
           {m.time ? (
             <span className="text-[11px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full" title="Tiempo estimado">
               ~{m.time} min
@@ -85,23 +101,8 @@ export default function PromotionsGrid(props: {
         <div className="mt-2 font-semibold text-gray-900">{m.name}</div>
         {m.desc ? <div className="text-sm text-gray-500">{m.desc}</div> : null}
         <div className="mt-2 text-rose-600 font-bold">${clp(m.price)}</div>
-        <div className="mt-3 grid grid-cols-2 gap-2">
-          <button
-            className="inline-flex items-center justify-center gap-1 px-3 py-2 rounded-lg bg-rose-600 text-white hover:bg-rose-700"
-            onClick={addQuick}
-            title="Agregar rápido"
-          >
-            <Plus size={16} /> Agregar
-          </button>
-          <button
-            className="inline-flex items-center justify-center gap-1 px-3 py-2 rounded-lg border hover:bg-gray-50"
-            onClick={() => openCustomize(m)}
-            title="Personalizar (delivery, salsas, cambios, etc.)"
-          >
-            <SlidersHorizontal size={16} /> Personalizar
-          </button>
-        </div>
-      </div>
+        <div className="mt-2 text-[11px] text-gray-500">Toca para elegir extras (servicio se define al cliente)</div>
+      </button>
     );
   };
 
@@ -125,10 +126,16 @@ export default function PromotionsGrid(props: {
     );
   };
 
-  const ChipBtn: React.FC<{ active: boolean; onClick: () => void; children: React.ReactNode }> = ({ active, onClick, children }) => (
+  const ChipBtn: React.FC<{ active: boolean; onClick: () => void; children: React.ReactNode }> = ({
+    active,
+    onClick,
+    children,
+  }) => (
     <button
       onClick={onClick}
-      className={`px-3 py-1.5 rounded-full text-sm border ${active ? "bg-rose-600 text-white border-rose-600" : "bg-white text-gray-700 hover:bg-gray-50"}`}
+      className={`px-3 py-1.5 rounded-full text-sm border ${
+        active ? "bg-rose-600 text-white border-rose-600" : "bg-white text-gray-700 hover:bg-gray-50"
+      }`}
     >
       {children}
     </button>
@@ -141,18 +148,24 @@ export default function PromotionsGrid(props: {
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
           <div>
             <h2 className="text-xl font-bold text-gray-900">MENÚ SushiKoi</h2>
-            <p className="text-sm text-gray-600">Ordenado por <b>Promociones</b> e <b>Individuales</b></p>
+            <p className="text-sm text-gray-600">
+              Ordenado por <b>Promociones</b> e <b>Individuales</b>
+            </p>
           </div>
           <div className="flex items-center gap-2">
             <button
               onClick={() => setView("PROMOCIONES")}
-              className={`px-3 py-1.5 rounded-lg text-sm ${view === "PROMOCIONES" ? "bg-rose-600 text-white" : "bg-gray-100 text-gray-700"}`}
+              className={`px-3 py-1.5 rounded-lg text-sm ${
+                view === "PROMOCIONES" ? "bg-rose-600 text-white" : "bg-gray-100 text-gray-700"
+              }`}
             >
               🎉 Promociones
             </button>
             <button
               onClick={() => setView("PRODUCTOS INDIVIDUALES")}
-              className={`px-3 py-1.5 rounded-lg text-sm ${view === "PRODUCTOS INDIVIDUALES" ? "bg-rose-600 text-white" : "bg-gray-100 text-gray-700"}`}
+              className={`px-3 py-1.5 rounded-lg text-sm ${
+                view === "PRODUCTOS INDIVIDUALES" ? "bg-rose-600 text-white" : "bg-gray-100 text-gray-700"
+              }`}
             >
               🍱 Individuales
             </button>
@@ -169,19 +182,35 @@ export default function PromotionsGrid(props: {
               onChange={(e) => setQ(e.target.value)}
             />
             {q && (
-              <button className="absolute right-2 top-2 text-gray-400 hover:text-gray-600" onClick={() => setQ("")} title="Limpiar">
+              <button
+                className="absolute right-2 top-2 text-gray-400 hover:text-gray-600"
+                onClick={() => setQ("")}
+                title="Limpiar"
+              >
                 <X size={16} />
               </button>
             )}
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-sm text-gray-600 inline-flex items-center gap-1"><Filter size={14}/> Filtros:</span>
-            <ChipBtn active={chips.includes("fritos")} onClick={() => toggleChip("fritos")}>Fritos</ChipBtn>
-            <ChipBtn active={chips.includes("salmon")} onClick={() => toggleChip("salmon")}>Salmón</ChipBtn>
-            <ChipBtn active={chips.includes("veggie")} onClick={() => toggleChip("veggie")}>Vegetarianos</ChipBtn>
-            <ChipBtn active={chips.includes("sinArroz")} onClick={() => toggleChip("sinArroz")}>Sin arroz</ChipBtn>
-            <ChipBtn active={chips.includes("premium")} onClick={() => toggleChip("premium")}>Premium</ChipBtn>
+            <span className="text-sm text-gray-600 inline-flex items-center gap-1">
+              <Filter size={14} /> Filtros:
+            </span>
+            <ChipBtn active={chips.includes("fritos")} onClick={() => toggleChip("fritos")}>
+              Fritos
+            </ChipBtn>
+            <ChipBtn active={chips.includes("salmon")} onClick={() => toggleChip("salmon")}>
+              Salmón
+            </ChipBtn>
+            <ChipBtn active={chips.includes("veggie")} onClick={() => toggleChip("veggie")}>
+              Vegetarianos
+            </ChipBtn>
+            <ChipBtn active={chips.includes("sinArroz")} onClick={() => toggleChip("sinArroz")}>
+              Sin arroz
+            </ChipBtn>
+            <ChipBtn active={chips.includes("premium")} onClick={() => toggleChip("premium")}>
+              Premium
+            </ChipBtn>
             {chips.length > 0 && (
               <button className="ml-1 text-sm text-gray-500 hover:text-gray-700" onClick={() => setChips([])}>
                 Limpiar filtros
@@ -196,7 +225,7 @@ export default function PromotionsGrid(props: {
         {view === "PROMOCIONES" ? renderCategory("PROMOCIONES") : renderCategory("PRODUCTOS INDIVIDUALES")}
       </div>
 
-      {/* Modal de personalización (tu componente) */}
+      {/* Modal de detalle: mantiene tu flujo de personalización (servicio se decide luego en CustomerForm/ServiceTypeModal) */}
       {modalData && (
         <PromotionDetailModal
           open={modalOpen}
@@ -207,6 +236,8 @@ export default function PromotionsGrid(props: {
           name={modalData.name}
           isLargePromo={modalData.isLarge}
           onConfirm={(payload) => {
+            // Importante: aquí no forzamos delivery/local.
+            // El cálculo final de delivery va en CustomerForm (según km) y/o ServiceTypeModal.
             onAddToCartDetailed(payload);
           }}
           onAfterConfirm={onAfterConfirm}
